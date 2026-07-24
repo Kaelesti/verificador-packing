@@ -1,4 +1,4 @@
-const CACHE = "verificador-packing-v1-1";
+const CACHE = "verificador-packing-v1-2";
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(["./", "./index.html"])));
   self.skipWaiting();
