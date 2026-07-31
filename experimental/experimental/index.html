@@ -1,80 +1,73 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
-<meta name="theme-color" content="#102a43" />
-<link rel="manifest" href="manifest.webmanifest" />
-<title>Scanner Experimental</title>
-<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#102a43">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Scanner Experimental v0.2</title>
 <style>
-:root{--bg:#071521;--panel:#102a43;--line:#b8d8f0;--ok:#2bd576;--warn:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
+:root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--text:#f7fbff;--muted:#b9cad8}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-body{overflow:hidden}.app{height:100%;display:grid;grid-template-rows:auto 1fr auto}
+body{overflow:hidden}.app{height:100%;display:grid;grid-template-rows:auto minmax(210px,1fr) auto}
 header{padding:10px 14px;background:linear-gradient(180deg,#102a43,#0b2135);display:flex;align-items:center;justify-content:space-between;gap:10px}
-header h1{font-size:17px;margin:0}header small{display:block;color:var(--muted);font-weight:400}
-.badge{font-size:12px;padding:5px 8px;border-radius:999px;background:#183e5d;color:var(--muted)}
+header h1{font-size:17px;margin:0}header small{display:block;color:var(--muted)}.badge{font-size:12px;padding:5px 8px;border-radius:999px;background:#183e5d;color:var(--muted);white-space:nowrap}
 .viewer{position:relative;background:#000;min-height:0;overflow:hidden}video{width:100%;height:100%;object-fit:cover;background:#000}
-.overlay{position:absolute;inset:0;pointer-events:none}.shade{position:absolute;background:rgba(0,0,0,.42)}
-.scanbox{position:absolute;border:2px solid #fff;border-radius:14px;box-shadow:0 0 0 1px rgba(0,0,0,.35),0 0 18px rgba(255,255,255,.15);transition:.2s}
-.scanbox.wide{left:8%;right:8%;top:13%;bottom:9%}.scanbox.precise{width:43%;aspect-ratio:1/1;left:50%;top:50%;transform:translate(-50%,-50%)}
-.scanbox.linear{left:7%;right:7%;height:23%;top:50%;transform:translateY(-50%)}
+.overlay{position:absolute;inset:0;pointer-events:none}.scanbox{position:absolute;left:7%;right:7%;height:23%;top:50%;transform:translateY(-50%);border:2px solid #fff;border-radius:14px;box-shadow:0 0 18px rgba(255,255,255,.15)}
 .scanline{position:absolute;left:5%;right:5%;top:50%;height:2px;background:linear-gradient(90deg,transparent,var(--ok),transparent);box-shadow:0 0 8px var(--ok);animation:sweep 1.4s ease-in-out infinite alternate}
-@keyframes sweep{from{transform:translateY(-45px)}to{transform:translateY(45px)}}
-.controls{background:#0b2135;padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:grid;gap:8px;max-height:43vh;overflow:auto}
-.row{display:flex;gap:7px;align-items:center}.row.wrap{flex-wrap:wrap}.grow{flex:1}
-button,select,input{font:inherit}button{border:0;border-radius:11px;background:#183e5d;color:white;padding:10px 12px;font-weight:650}button.primary{background:#1a73e8}button.active{outline:2px solid var(--line);background:#245777}button:disabled{opacity:.45}
-select{background:#132f49;color:white;border:1px solid #345a75;border-radius:9px;padding:9px;min-width:0}
-label{font-size:12px;color:var(--muted)}input[type=range]{width:100%}.result{border:1px solid #31566f;border-radius:12px;padding:9px 10px;background:#0d263b;min-height:58px}.result strong{display:block;font-size:17px;word-break:break-all}.meta{font-size:12px;color:var(--muted);margin-top:4px}.status{font-size:12px;color:var(--muted)}
-.flash{animation:flash .35s}@keyframes flash{50%{box-shadow:inset 0 0 0 6px var(--ok)}}
-@media(min-width:800px){.app{max-width:720px;margin:auto;border-inline:1px solid #244761}}
+@keyframes sweep{from{transform:translateY(-38px)}to{transform:translateY(38px)}}
+.controls{background:var(--panel2);padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:grid;gap:8px;max-height:52vh;overflow:auto}
+.row{display:flex;gap:7px;align-items:center}.grow{flex:1;min-width:0}button,input{font:inherit}
+button{border:0;border-radius:11px;background:#183e5d;color:white;padding:10px 12px;font-weight:650}button.primary{background:#1a73e8}button.sample{background:#7a651f}button.active{outline:2px solid #d8edff;background:#245777}button:disabled{opacity:.45}
+input[type=text]{width:100%;background:#132f49;color:white;border:1px solid #345a75;border-radius:9px;padding:10px}input[type=file]{display:none}input[type=range]{width:100%}
+label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center;border-radius:11px;background:#183e5d;color:white;padding:10px 12px;font-weight:650}
+.result{border:1px solid var(--line);border-radius:12px;padding:9px 10px;background:#0d263b;min-height:58px}.result strong{display:block;font-size:17px;word-break:break-all}.meta,.status{font-size:12px;color:var(--muted);margin-top:4px}
+.history{border:1px solid var(--line);border-radius:12px;background:#0d263b;overflow:hidden}.historyHead{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
+.historyList{max-height:150px;overflow:auto}.empty{padding:12px;color:var(--muted);font-size:13px;text-align:center}
+.item{display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid rgba(49,86,111,.6);font-variant-numeric:tabular-nums}.item:last-child{border-bottom:0}
+.item.sampled{background:rgba(255,207,92,.14);box-shadow:inset 4px 0 0 var(--sample)}.code{font-weight:750;word-break:break-all}.key{margin-left:auto;color:var(--muted);font-weight:650;white-space:nowrap}.camera{display:none}.item.sampled .camera{display:inline}
+.flash{animation:flash .35s}@keyframes flash{50%{box-shadow:inset 0 0 0 6px var(--ok)}}@media(min-width:800px){.app{max-width:720px;margin:auto;border-inline:1px solid #244761}}
 </style>
 </head>
 <body>
-<div class="app" id="app">
-<header><div><h1>Scanner Experimental</h1><small>Prueba comparativa de cámara y motores</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
-<main class="viewer" id="viewer">
-  <video id="video" playsinline muted></video>
-  <div class="overlay"><div id="scanbox" class="scanbox wide"><div class="scanline"></div></div></div>
-</main>
+<div class="app">
+<header><div><h1>Scanner Experimental v0.2</h1><small>Nativo · código lineal</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
 <section class="controls">
-  <div class="row wrap">
-    <button class="mode active" data-mode="wide">Amplio</button>
-    <button class="mode" data-mode="precise">Preciso</button>
-    <button class="mode" data-mode="linear">Código lineal</button>
-  </div>
-  <div class="row">
-    <select id="engine" class="grow"><option value="auto">Motor: automático</option><option value="native">Motor nativo</option><option value="zxing">Motor ZXing</option></select>
-    <button id="torch" disabled>🔦</button>
-    <button id="switch">↻ Cámara</button>
-  </div>
-  <div><label>Zoom: <span id="zoomValue">1.0×</span></label><input id="zoom" type="range" min="1" max="1" step="0.1" value="1" disabled></div>
-  <div class="result"><strong id="value">Sin lectura</strong><div class="meta" id="meta">Apunta la cámara hacia un código.</div></div>
-  <div class="row"><button id="start" class="primary grow">Iniciar cámara</button><button id="copy" disabled>Copiar</button><button id="clear">Limpiar</button></div>
+  <div class="row"><label class="fileBtn grow" for="excelFile">Elegir Excel</label><input id="excelFile" type="file" accept=".xlsx,.xls"><input id="serviceKey" class="grow" type="text" placeholder="Clave: 362f7627cnsMX" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+  <div class="row"><button id="torch" disabled>🔦 Linterna</button><div class="grow"><label>Zoom: <span id="zoomValue">1.0×</span></label><input id="zoom" type="range" min="1" max="1" step="0.1" value="1" disabled></div></div>
+  <div class="result"><strong id="value">Sin lectura</strong><div class="meta" id="meta">Ingresa la clave y apunta hacia un código.</div></div>
+  <div class="row"><button id="start" class="primary grow">Iniciar cámara</button><button id="sample" class="sample" disabled>📷 Muestra</button><button id="clearCurrent">Limpiar</button></div>
+  <div class="history"><div class="historyHead"><strong>Histórico</strong><span id="count">0</span></div><div class="historyList" id="history"><div class="empty">Aún no hay lecturas.</div></div></div>
+  <div class="row"><button id="clearHistory" class="grow">Vaciar histórico</button></div>
   <div class="status" id="status">La cámara requiere HTTPS o GitHub Pages.</div>
 </section>
 </div>
 <script>
-const $=s=>document.querySelector(s), video=$('#video'), scanbox=$('#scanbox'), statusEl=$('#status'), badge=$('#engineBadge');
-let stream=null, track=null, running=false, torchOn=false, facing='environment', nativeDetector=null, zxingControls=null, lastValue='', lastAt=0, raf=0, mode='wide';
-const wantedFormats=['code_128','code_39','code_93','codabar','ean_13','ean_8','itf','upc_a','upc_e','qr_code','data_matrix','pdf417','aztec'];
+const $=s=>document.querySelector(s),video=$('#video'),statusEl=$('#status'),badge=$('#engineBadge');
+let stream=null,track=null,running=false,torchOn=false,detector=null,timer=0,lastAccepted='',lastAt=0,currentCode='';
+const records=[],formats=['code_128','code_39','code_93','codabar','ean_13','ean_8','itf','upc_a','upc_e'];
 function setStatus(t){statusEl.textContent=t}
-function beep(){try{const c=new (window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.frequency.value=1100;g.gain.setValueAtTime(.25,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.13);o.connect(g).connect(c.destination);o.start();o.stop(c.currentTime+.13)}catch(e){}}
-function accept(value,format,engine){if(!value)return;const now=Date.now();if(value===lastValue&&now-lastAt<1600)return;lastValue=value;lastAt=now;$('#value').textContent=value;$('#meta').textContent=`${format||'formato desconocido'} · ${engine} · ${new Date().toLocaleTimeString('es-CL')}`;$('#copy').disabled=false;beep();$('#viewer').classList.remove('flash');void $('#viewer').offsetWidth;$('#viewer').classList.add('flash')}
-function cropRect(){const vw=video.videoWidth,vh=video.videoHeight;if(!vw||!vh)return null;if(mode==='wide')return {x:vw*.05,y:vh*.08,w:vw*.90,h:vh*.84};if(mode==='precise'){const s=Math.min(vw,vh)*.48;return{x:(vw-s)/2,y:(vh-s)/2,w:s,h:s}}return{x:vw*.04,y:vh*.36,w:vw*.92,h:vh*.28}}
+function serviceKey(){return $('#serviceKey').value.trim()}
+function beep(){try{const C=window.AudioContext||window.webkitAudioContext,c=new C(),o=c.createOscillator(),g=c.createGain();o.type='square';o.frequency.setValueAtTime(1250,c.currentTime);g.gain.setValueAtTime(.65,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.2);o.connect(g).connect(c.destination);o.start();o.stop(c.currentTime+.2);setTimeout(()=>c.close(),300)}catch(e){}}
+function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+function render(){const h=$('#history');$('#count').textContent=records.length;if(!records.length){h.innerHTML='<div class="empty">Aún no hay lecturas.</div>';return}h.innerHTML=records.map((r,i)=>`<div class="item ${r.sample?'sampled':''}" data-i="${i}"><span class="camera">📷</span><span class="code">${escapeHtml(r.code)}</span><span class="key">${escapeHtml(r.key)}</span></div>`).join('');h.scrollTop=0}
+function accept(code){if(!code)return;const key=serviceKey();if(!key){setStatus('Escribe primero la clave del servicio.');return}const now=Date.now();if(code===lastAccepted&&now-lastAt<1800)return;lastAccepted=code;lastAt=now;currentCode=code;records.unshift({code,key,sample:false});$('#value').textContent=code;$('#meta').textContent=key;$('#sample').disabled=false;$('#sample').textContent='📷 Muestra';render();beep();$('#viewer').classList.remove('flash');void $('#viewer').offsetWidth;$('#viewer').classList.add('flash')}
 const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
-function captureCrop(){const r=cropRect();if(!r)return null;const scale=mode==='precise'?1.8:1.25;canvas.width=Math.max(320,Math.round(r.w*scale));canvas.height=Math.max(180,Math.round(r.h*scale));ctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,canvas.width,canvas.height);return canvas}
-async function setupNative(){if(!('BarcodeDetector'in window))throw new Error('BarcodeDetector no disponible');const supported=await BarcodeDetector.getSupportedFormats();const formats=wantedFormats.filter(f=>supported.includes(f));nativeDetector=new BarcodeDetector(formats.length?{formats}:undefined);return formats}
-async function nativeLoop(){if(!running||!nativeDetector)return;try{const source=captureCrop()||video;const codes=await nativeDetector.detect(source);if(codes?.length)accept(codes[0].rawValue,codes[0].format,'Nativo')}catch(e){}raf=setTimeout(nativeLoop,110)}
-async function startZXing(){if(!window.ZXingBrowser)throw new Error('ZXing no cargó. Revisa internet.');const reader=new ZXingBrowser.BrowserMultiFormatReader();zxingControls=await reader.decodeFromVideoElement(video,(result,error)=>{if(result)accept(result.getText(),result.getBarcodeFormat?.(),'ZXing')});}
-async function stopAll(){running=false;clearTimeout(raf);try{zxingControls?.stop()}catch(e){}zxingControls=null;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;track=null}video.srcObject=null;$('#start').textContent='Iniciar cámara';badge.textContent='Detenido'}
-async function startCamera(){await stopAll();setStatus('Solicitando cámara…');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facing},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});video.srcObject=stream;await video.play();track=stream.getVideoTracks()[0];running=true;configureCapabilities();let selected=$('#engine').value;if(selected==='auto'){try{const f=await setupNative();selected='native';badge.textContent=`Nativo · ${f.length} formatos`}catch(e){selected='zxing';badge.textContent='ZXing'}}if(selected==='native'){await setupNative();badge.textContent='Motor nativo';nativeLoop()}else{badge.textContent='Motor ZXing';await startZXing()}$('#start').textContent='Detener';setStatus(`${track.label||'Cámara trasera'} · ${video.videoWidth}×${video.videoHeight}`)}catch(e){setStatus('No se pudo iniciar: '+e.message);badge.textContent='Error';running=false}}
-function configureCapabilities(){const c=track?.getCapabilities?.()||{};const z=$('#zoom');if(c.zoom){z.min=c.zoom.min;z.max=c.zoom.max;z.step=c.zoom.step||.1;z.value=c.zoom.min;z.disabled=false;$('#zoomValue').textContent=Number(z.value).toFixed(1)+'×'}else z.disabled=true;$('#torch').disabled=!c.torch}
-$('#start').onclick=()=>running?stopAll():startCamera();$('#switch').onclick=async()=>{facing=facing==='environment'?'user':'environment';await startCamera()};
-$('#torch').onclick=async()=>{if(!track)return;torchOn=!torchOn;try{await track.applyConstraints({advanced:[{torch:torchOn}]});$('#torch').classList.toggle('active',torchOn)}catch(e){setStatus('Linterna no disponible en esta cámara')}};
-$('#zoom').oninput=async e=>{const v=Number(e.target.value);$('#zoomValue').textContent=v.toFixed(1)+'×';try{await track.applyConstraints({advanced:[{zoom:v}]})}catch(err){}};
-$('#engine').onchange=()=>{if(running)startCamera()};document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>{document.querySelectorAll('.mode').forEach(x=>x.classList.remove('active'));b.classList.add('active');mode=b.dataset.mode;scanbox.className='scanbox '+mode});
-$('#copy').onclick=async()=>{await navigator.clipboard.writeText(lastValue);setStatus('Código copiado')};$('#clear').onclick=()=>{lastValue='';$('#value').textContent='Sin lectura';$('#meta').textContent='Apunta la cámara hacia un código.';$('#copy').disabled=true};
-window.addEventListener('beforeunload',stopAll);if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js');
+function capture(){const vw=video.videoWidth,vh=video.videoHeight;if(!vw||!vh)return video;const x=vw*.04,y=vh*.36,w=vw*.92,h=vh*.28,scale=1.35;canvas.width=Math.max(480,Math.round(w*scale));canvas.height=Math.max(180,Math.round(h*scale));ctx.drawImage(video,x,y,w,h,0,0,canvas.width,canvas.height);return canvas}
+async function setupDetector(){if(!('BarcodeDetector' in window))throw new Error('Motor nativo BarcodeDetector no disponible');const supported=await BarcodeDetector.getSupportedFormats();const usable=formats.filter(f=>supported.includes(f));detector=new BarcodeDetector(usable.length?{formats:usable}:undefined);return usable.length}
+async function loop(){if(!running||!detector)return;try{const found=await detector.detect(capture());if(found?.length)accept(found[0].rawValue)}catch(e){}timer=setTimeout(loop,100)}
+function capabilities(){const c=track?.getCapabilities?.()||{},z=$('#zoom');if(c.zoom){z.min=c.zoom.min;z.max=c.zoom.max;z.step=c.zoom.step||.1;z.value=c.zoom.min;z.disabled=false;$('#zoomValue').textContent=Number(z.value).toFixed(1)+'×'}else z.disabled=true;$('#torch').disabled=!c.torch}
+async function stop(){running=false;clearTimeout(timer);if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;track=null;video.srcObject=null;$('#start').textContent='Iniciar cámara';badge.textContent='Detenido'}
+async function start(){if(!serviceKey()){setStatus('Escribe o carga primero la clave del servicio.');$('#serviceKey').focus();return}await stop();setStatus('Solicitando cámara trasera…');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});video.srcObject=stream;await video.play();track=stream.getVideoTracks()[0];const n=await setupDetector();running=true;capabilities();badge.textContent='Motor nativo';$('#start').textContent='Detener';setStatus(`${track.label||'Cámara trasera'} · ${n} formatos`);loop()}catch(e){running=false;badge.textContent='Error';setStatus('No se pudo iniciar: '+e.message)}}
+$('#excelFile').onchange=e=>{const f=e.target.files?.[0];if(!f)return;$('#serviceKey').value=f.name.replace(/\.[^.]+$/,'');setStatus('Clave tomada del nombre del archivo. Puedes editarla.');e.target.value=''};
+$('#start').onclick=()=>running?stop():start();
+$('#torch').onclick=async()=>{if(!track)return;torchOn=!torchOn;try{await track.applyConstraints({advanced:[{torch:torchOn}]});$('#torch').classList.toggle('active',torchOn)}catch(e){setStatus('Linterna no disponible')}};
+$('#zoom').oninput=async e=>{const v=Number(e.target.value);$('#zoomValue').textContent=v.toFixed(1)+'×';try{await track.applyConstraints({advanced:[{zoom:v}]})}catch(e){}};
+$('#sample').onclick=()=>{const r=records.find(x=>x.code===currentCode&&x.key===serviceKey());if(!r)return;r.sample=!r.sample;render();$('#sample').textContent=r.sample?'✓ Muestra':'📷 Muestra';setStatus(r.sample?'Código marcado como muestra.':'Marca de muestra retirada.')};
+$('#clearCurrent').onclick=()=>{currentCode='';lastAccepted='';$('#value').textContent='Sin lectura';$('#meta').textContent='Ingresa la clave y apunta hacia un código.';$('#sample').disabled=true;$('#sample').textContent='📷 Muestra'};
+$('#clearHistory').onclick=()=>{records.length=0;currentCode='';lastAccepted='';render();$('#value').textContent='Sin lectura';$('#meta').textContent='Ingresa la clave y apunta hacia un código.';$('#sample').disabled=true;$('#sample').textContent='📷 Muestra';setStatus('Histórico vaciado.')};
+window.addEventListener('beforeunload',stop);if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js');
 </script>
-</body></html>
+</body>
+</html>
