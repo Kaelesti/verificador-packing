@@ -5,9 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Scanner Experimental v0.2.4</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<title>Scanner Experimental v0.2.5</title>
 <style>
-:root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--text:#f7fbff;--muted:#b9cad8}
+:root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 body{overflow:hidden}.app{height:100%;display:grid;grid-template-rows:auto minmax(210px,1fr) auto}
 header{padding:10px 14px;background:linear-gradient(180deg,#102a43,#0b2135);display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -25,13 +26,13 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 .history{border:1px solid var(--line);border-radius:12px;background:#0d263b;overflow:hidden}.historyHead{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
 .historyList{max-height:150px;overflow:auto}.empty{padding:12px;color:var(--muted);font-size:13px;text-align:center}
 .item{display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid rgba(49,86,111,.6);font-variant-numeric:tabular-nums}.item:last-child{border-bottom:0}
-.item.sampled{background:rgba(255,207,92,.14);box-shadow:inset 4px 0 0 var(--sample)}.code{font-weight:750;word-break:break-all}.key{margin-left:auto;color:var(--muted);font-weight:650;white-space:nowrap}.camera{display:none}.item.sampled .camera{display:inline}
+.item.sampled{background:rgba(255,207,92,.14);box-shadow:inset 4px 0 0 var(--sample)}.item.found{box-shadow:inset 4px 0 0 var(--ok)}.item.notfound{box-shadow:inset 4px 0 0 var(--bad)}.code{font-weight:750;word-break:break-all}.key{margin-left:auto;color:var(--muted);font-weight:650;white-space:nowrap}.camera{display:none}.item.sampled .camera{display:inline}
 .flash{animation:flash .35s}@keyframes flash{50%{box-shadow:inset 0 0 0 6px var(--ok)}}@media(min-width:800px){.app{max-width:720px;margin:auto;border-inline:1px solid #244761}}
 </style>
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.2.4</h1><small>Nativo · ingreso manual · varios servicios</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<header><div><h1>Scanner Experimental v0.2.5</h1><small>Nativo · lectura de Excel · una hoja por servicio</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
 <main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
 <section class="controls">
   <div class="row">
@@ -47,6 +48,16 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
       placeholder="Clave: 362f7627cnsMX"
       autocomplete="off" autocapitalize="off" spellcheck="false" disabled>
   </div>
+  <div class="row">
+    <select id="sheetSelect" class="grow" disabled>
+      <option value="">Seleccionar hoja</option>
+    </select>
+    <select id="columnSelect" class="grow" disabled>
+      <option value="">Columna de códigos</option>
+    </select>
+    <button id="loadCodes" disabled>Cargar códigos</button>
+  </div>
+  <div class="meta" id="excelInfo">Ningún código cargado desde Excel.</div>
 
   <div class="row">
     <input id="manualCode" class="grow" type="text"
@@ -72,8 +83,9 @@ function setStatus(t){statusEl.textContent=t}
 function serviceKey(){return $('#serviceKey').value.trim()}
 function beep(){try{const C=window.AudioContext||window.webkitAudioContext,c=new C(),o=c.createOscillator(),g=c.createGain();o.type='square';o.frequency.setValueAtTime(1250,c.currentTime);g.gain.setValueAtTime(.65,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.2);o.connect(g).connect(c.destination);o.start();o.stop(c.currentTime+.2);setTimeout(()=>c.close(),300)}catch(e){}}
 function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
-function render(){const h=$('#history');$('#count').textContent=records.length;if(!records.length){h.innerHTML='<div class="empty">Aún no hay lecturas.</div>';return}h.innerHTML=records.map((r,i)=>`<div class="item ${r.sample?'sampled':''}" data-i="${i}"><span class="camera">📷</span><span class="code">${escapeHtml(r.code)}</span><span class="key">${escapeHtml(r.key)}</span></div>`).join('');h.scrollTop=0}
-function accept(code){if(!code)return;const key=serviceKey();if(!key){setStatus('Escribe primero la clave del servicio.');return}const now=Date.now();if(code===lastAccepted&&now-lastAt<1800)return;lastAccepted=code;lastAt=now;currentCode=code;records.unshift({code,key,sample:false});$('#value').textContent=code;$('#meta').textContent=key;$('#sample').disabled=false;$('#sample').textContent='📷 Muestra';render();beep();$('#viewer').classList.remove('flash');void $('#viewer').offsetWidth;$('#viewer').classList.add('flash')}
+function render(){const h=$('#history');$('#count').textContent=records.length;if(!records.length){h.innerHTML='<div class="empty">Aún no hay lecturas.</div>';return}h.innerHTML=records.map((r,i)=>`<div class="item ${r.sample?'sampled':r.found===true?'found':r.found===false?'notfound':''}" data-i="${i}"><span class="camera">${r.sample?'📷':r.found===true?'✓':r.found===false?'!':''}</span><span class="code">${escapeHtml(r.code)}</span><span class="key">${escapeHtml(r.key)}</span></div>`).join('');h.scrollTop=0}
+function activeService(){const i=Number($('#serviceSelect').value);return Number.isInteger(i)?services[i]:null}
+function accept(code){if(!code)return;const key=serviceKey();if(!key){setStatus('Escribe primero la clave del servicio.');return}const normalized=normalizeCode(code);const now=Date.now();if(normalized===lastAccepted&&now-lastAt<1800)return;lastAccepted=normalized;lastAt=now;currentCode=normalized;const service=activeService();const hasBase=Boolean(service&&service.codes&&service.codes.size);const found=hasBase?service.codes.has(normalized):null;records.unshift({code:normalized,key,sample:false,found});$('#value').textContent=normalized;$('#meta').textContent=hasBase?(found?`Encontrado · ${key}`:`No encontrado · ${key}`):key;$('#sample').disabled=false;$('#sample').textContent='📷 Muestra';render();beep();$('#viewer').classList.remove('flash');void $('#viewer').offsetWidth;$('#viewer').classList.add('flash')}
 
 function normalizeCode(v){
   return String(v ?? '')
@@ -103,47 +115,162 @@ function capabilities(){const c=track?.getCapabilities?.()||{},z=$('#zoom');if(c
 async function stop(){running=false;clearTimeout(timer);if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;track=null;video.srcObject=null;$('#start').textContent='Iniciar cámara';badge.textContent='Detenido'}
 async function start(){if(!serviceKey()){setStatus('Escribe o carga primero la clave del servicio.');$('#serviceKey').focus();return}await stop();setStatus('Solicitando cámara trasera…');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});video.srcObject=stream;await video.play();track=stream.getVideoTracks()[0];const n=await setupDetector();running=true;capabilities();badge.textContent='Motor nativo';$('#start').textContent='Detener';setStatus(`${track.label||'Cámara trasera'} · ${n} formatos`);loop()}catch(e){running=false;badge.textContent='Error';setStatus('No se pudo iniciar: '+e.message)}}
 
+
+function columnName(index){
+  let name='';
+  for(let n=index+1;n>0;n=Math.floor((n-1)/26)){
+    name=String.fromCharCode(65+(n-1)%26)+name;
+  }
+  return name;
+}
+function sheetRows(service,sheetName){
+  if(!service?.workbook||!sheetName)return [];
+  return XLSX.utils.sheet_to_json(service.workbook.Sheets[sheetName],{
+    header:1,defval:'',raw:false,blankrows:false
+  });
+}
+function probableHeader(rows,column){
+  for(let r=0;r<Math.min(rows.length,12);r++){
+    const value=String(rows[r]?.[column]??'').trim();
+    if(value)return value.slice(0,24);
+  }
+  return 'sin encabezado';
+}
+function refreshSheetControls(){
+  const service=activeService();
+  const sheet=$('#sheetSelect'),column=$('#columnSelect'),button=$('#loadCodes');
+  sheet.innerHTML='<option value="">Seleccionar hoja</option>';
+  column.innerHTML='<option value="">Columna de códigos</option>';
+  sheet.disabled=true;column.disabled=true;button.disabled=true;
+  if(!service?.workbook){
+    $('#excelInfo').textContent=service?'El archivo no pudo leerse.':'Ningún código cargado desde Excel.';
+    return;
+  }
+  for(const name of service.workbook.SheetNames){
+    const option=document.createElement('option');
+    option.value=name;option.textContent=name;sheet.appendChild(option);
+  }
+  sheet.disabled=false;
+  if(service.sheetName&&service.workbook.SheetNames.includes(service.sheetName)){
+    sheet.value=service.sheetName;
+    refreshColumns();
+  }
+  $('#excelInfo').textContent=service.codes?.size
+    ? `${service.codes.size} códigos cargados · ${service.sheetName||''} · columna ${columnName(service.columnIndex||0)}`
+    : 'Selecciona una hoja y la columna que contiene los códigos.';
+}
+function refreshColumns(){
+  const service=activeService(),sheetName=$('#sheetSelect').value;
+  const column=$('#columnSelect'),button=$('#loadCodes');
+  column.innerHTML='<option value="">Columna de códigos</option>';
+  column.disabled=true;button.disabled=true;
+  if(!service||!sheetName)return;
+  const rows=sheetRows(service,sheetName);
+  const maxCols=Math.max(0,...rows.slice(0,80).map(row=>row.length));
+  for(let c=0;c<maxCols;c++){
+    const option=document.createElement('option');
+    option.value=String(c);
+    option.textContent=`${columnName(c)} · ${probableHeader(rows,c)}`;
+    column.appendChild(option);
+  }
+  column.disabled=maxCols===0;
+  if(Number.isInteger(service.columnIndex)&&service.sheetName===sheetName){
+    column.value=String(service.columnIndex);
+  }
+  button.disabled=!column.value;
+}
+function looksLikeCode(value){
+  const code=normalizeCode(value);
+  if(code.length<3||code.length>50||!/\d/.test(code))return false;
+  return !/^(TOTAL|TOTALES|CODIGO|CODIGOS|CODE|PAQUETE|PAQUETES|PACKAGE|BUNDLE|ETIQUETA|LABEL|ID)$/.test(code);
+}
+function loadActiveCodes(){
+  const service=activeService();
+  const sheetName=$('#sheetSelect').value;
+  const columnIndex=Number($('#columnSelect').value);
+  if(!service||!sheetName||!Number.isInteger(columnIndex)){
+    setStatus('Selecciona una hoja y una columna.');
+    return;
+  }
+  const rows=sheetRows(service,sheetName);
+  const codes=new Set();
+  for(const row of rows){
+    const raw=row?.[columnIndex];
+    if(looksLikeCode(raw))codes.add(normalizeCode(raw));
+  }
+  service.sheetName=sheetName;
+  service.columnIndex=columnIndex;
+  service.codes=codes;
+  $('#excelInfo').textContent=`${codes.size} códigos cargados · ${sheetName} · columna ${columnName(columnIndex)}`;
+  setStatus(codes.size?`${codes.size} códigos listos para verificar.`:'No se detectaron códigos válidos en esa columna.');
+}
+
 function renderServiceSelect(){
   const select=$('#serviceSelect');
   if(!services.length){
     select.innerHTML='<option value="">Sin servicios cargados</option>';
-    select.disabled=true;
-    $('#serviceKey').value='';
-    $('#serviceKey').disabled=true;
-    $('#fileCount').textContent='0 archivos';
-    return;
+    select.disabled=true;$('#serviceKey').value='';$('#serviceKey').disabled=true;
+    $('#fileCount').textContent='0 archivos';refreshSheetControls();return;
   }
-  select.innerHTML=services.map((s,i)=>
-    `<option value="${i}">${escapeHtml(s.fileName)}</option>`
-  ).join('');
-  select.disabled=false;
-  $('#serviceKey').disabled=false;
+  select.innerHTML=services.map((s,i)=>`<option value="${i}">${escapeHtml(s.fileName)}</option>`).join('');
+  select.disabled=false;$('#serviceKey').disabled=false;
   select.value=String(services.length-1);
   $('#serviceKey').value=services[services.length-1].key;
   $('#fileCount').textContent=`${services.length} archivo${services.length===1?'':'s'}`;
+  refreshSheetControls();
 }
-$('#excelFiles').addEventListener('change',function(){
+$('#excelFiles').addEventListener('change',async function(){
   const selected=Array.from(this.files||[]);
   if(!selected.length){
     setStatus('No se seleccionaron archivos.');
     return;
   }
+  if(typeof XLSX==='undefined'){
+    setStatus('No se pudo cargar el lector de Excel. Revisa la conexión a internet.');
+    return;
+  }
+  let loaded=0;
   for(const file of selected){
-    services.push({
-      fileName:file.name,
-      key:file.name.replace(/\.[^.]+$/,'')
-    });
+    try{
+      const buffer=await file.arrayBuffer();
+      const workbook=XLSX.read(buffer,{type:'array',cellDates:false});
+      services.push({
+        fileName:file.name,
+        key:file.name.replace(/\.[^.]+$/,''),
+        workbook,
+        sheetName:'',
+        columnIndex:null,
+        codes:new Set()
+      });
+      loaded++;
+    }catch(error){
+      console.error(error);
+      setStatus(`No se pudo leer ${file.name}.`);
+    }
   }
   renderServiceSelect();
-  setStatus(`${selected.length} archivo(s) agregado(s). Servicio activo: ${serviceKey()}`);
+  setStatus(`${loaded} archivo(s) leídos. Selecciona hoja y columna.`);
   this.value='';
 });
 $('#serviceSelect').addEventListener('change',function(){
   const i=Number(this.value);
   if(!Number.isInteger(i)||!services[i])return;
   $('#serviceKey').value=services[i].key;
+  refreshSheetControls();
   setStatus(`Servicio activo: ${services[i].key}`);
 });
+
+$('#sheetSelect').addEventListener('change',function(){
+  const service=activeService();
+  if(service)service.sheetName=this.value;
+  refreshColumns();
+  $('#loadCodes').disabled=!$('#columnSelect').value;
+});
+$('#columnSelect').addEventListener('change',function(){
+  $('#loadCodes').disabled=!this.value;
+});
+$('#loadCodes').onclick=loadActiveCodes;
+
 $('#serviceKey').addEventListener('input',function(){
   const i=Number($('#serviceSelect').value);
   if(Number.isInteger(i)&&services[i])services[i].key=this.value;
