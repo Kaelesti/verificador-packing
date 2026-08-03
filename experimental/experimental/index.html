@@ -5,36 +5,112 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Scanner Experimental v0.2</title>
+<title>Scanner Experimental v0.3</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
-:root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--text:#f7fbff;--muted:#b9cad8}
-*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-body{overflow:hidden}.app{height:100%;display:grid;grid-template-rows:auto minmax(210px,1fr) auto}
+:root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.app{min-height:100vh;display:grid;grid-template-rows:auto minmax(210px,44vh) auto}
 header{padding:10px 14px;background:linear-gradient(180deg,#102a43,#0b2135);display:flex;align-items:center;justify-content:space-between;gap:10px}
 header h1{font-size:17px;margin:0}header small{display:block;color:var(--muted)}.badge{font-size:12px;padding:5px 8px;border-radius:999px;background:#183e5d;color:var(--muted);white-space:nowrap}
 .viewer{position:relative;background:#000;min-height:0;overflow:hidden}video{width:100%;height:100%;object-fit:cover;background:#000}
-.overlay{position:absolute;inset:0;pointer-events:none}.scanbox{position:absolute;left:7%;right:7%;height:23%;top:50%;transform:translateY(-50%);border:2px solid #fff;border-radius:14px;box-shadow:0 0 18px rgba(255,255,255,.15)}
+.scanbox{position:absolute;left:7%;right:7%;height:23%;top:50%;transform:translateY(-50%);border:2px solid #fff;border-radius:14px;box-shadow:0 0 18px rgba(255,255,255,.15)}
 .scanline{position:absolute;left:5%;right:5%;top:50%;height:2px;background:linear-gradient(90deg,transparent,var(--ok),transparent);box-shadow:0 0 8px var(--ok);animation:sweep 1.4s ease-in-out infinite alternate}
 @keyframes sweep{from{transform:translateY(-38px)}to{transform:translateY(38px)}}
-.controls{background:var(--panel2);padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:grid;gap:8px;max-height:52vh;overflow:auto}
-.row{display:flex;gap:7px;align-items:center}.grow{flex:1;min-width:0}button,input{font:inherit}
-button{border:0;border-radius:11px;background:#183e5d;color:white;padding:10px 12px;font-weight:650}button.primary{background:#1a73e8}button.sample{background:#7a651f}button.active{outline:2px solid #d8edff;background:#245777}button:disabled{opacity:.45}
-input[type=text]{width:100%;background:#132f49;color:white;border:1px solid #345a75;border-radius:9px;padding:10px}input[type=file]{display:none}input[type=range]{width:100%}
+.controls{background:var(--panel2);padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:grid;gap:8px}
+.row{display:flex;gap:7px;align-items:center}.grow{flex:1;min-width:0}button,input,select{font:inherit}
+button{border:0;border-radius:11px;background:#183e5d;color:white;padding:10px 12px;font-weight:650}button.primary{background:#1a73e8}button.sample{background:#7a651f}button.danger{background:#6d2930}button.active{outline:2px solid #d8edff;background:#245777}button:disabled{opacity:.45}
+input[type=text],select{width:100%;background:#132f49;color:white;border:1px solid #345a75;border-radius:9px;padding:9px}input[type=file]{display:none}input[type=range]{width:100%}
 label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center;border-radius:11px;background:#183e5d;color:white;padding:10px 12px;font-weight:650}
+.panel{border:1px solid var(--line);border-radius:12px;background:#0d263b;overflow:hidden}.panelHead{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
+.importBody{max-height:260px;overflow:auto}.book{padding:9px 10px;border-bottom:1px solid rgba(49,86,111,.65)}.bookTop{display:flex;gap:7px;align-items:center;margin-bottom:8px}.bookName{font-size:12px;color:var(--muted);word-break:break-all}
+.sheet{display:grid;grid-template-columns:auto 1fr 1.15fr;gap:7px;align-items:center;padding:6px 0}.sheetName{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hint{font-size:11px;color:var(--muted);margin-top:5px}
 .result{border:1px solid var(--line);border-radius:12px;padding:9px 10px;background:#0d263b;min-height:58px}.result strong{display:block;font-size:17px;word-break:break-all}.meta,.status{font-size:12px;color:var(--muted);margin-top:4px}
-.history{border:1px solid var(--line);border-radius:12px;background:#0d263b;overflow:hidden}.historyHead{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
-.historyList{max-height:150px;overflow:auto}.empty{padding:12px;color:var(--muted);font-size:13px;text-align:center}
-.item{display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid rgba(49,86,111,.6);font-variant-numeric:tabular-nums}.item:last-child{border-bottom:0}
-.item.sampled{background:rgba(255,207,92,.14);box-shadow:inset 4px 0 0 var(--sample)}.code{font-weight:750;word-break:break-all}.key{margin-left:auto;color:var(--muted);font-weight:650;white-space:nowrap}.camera{display:none}.item.sampled .camera{display:inline}
-.flash{animation:flash .35s}@keyframes flash{50%{box-shadow:inset 0 0 0 6px var(--ok)}}@media(min-width:800px){.app{max-width:720px;margin:auto;border-inline:1px solid #244761}}
+.historyList{max-height:190px;overflow:auto}.empty{padding:12px;color:var(--muted);font-size:13px;text-align:center}
+.item{display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid rgba(49,86,111,.6);font-variant-numeric:tabular-nums}.item.ok{box-shadow:inset 4px 0 0 var(--ok)}.item.bad{box-shadow:inset 4px 0 0 var(--bad)}.item.sampled{background:rgba(255,207,92,.14);box-shadow:inset 4px 0 0 var(--sample)}
+.code{font-weight:750;word-break:break-all}.key{margin-left:auto;color:var(--muted);font-weight:650;white-space:nowrap}.icon{width:18px;text-align:center}
+.stats{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted)}.stats b{color:var(--text)}
+.flash{animation:flash .35s}@keyframes flash{50%{box-shadow:inset 0 0 0 6px var(--ok)}}@media(min-width:800px){.app{max-width:760px;margin:auto;border-inline:1px solid #244761}}
 </style>
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.2</h1><small>Nativo · código lineal</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
-<main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
+<header><div><h1>Scanner Experimental v0.3</h1><small>Nativo · múltiples Excel y hojas</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="scanbox"><div class="scanline"></div></div></main>
 <section class="controls">
-  <div class="row"><label class="fileBtn grow" for="excelFile">Elegir Excel</label><input id="excelFile" type="file" accept=".xlsx,.xls"><input id="serviceKey" class="grow" type="text" placeholder="Clave: 362f7627cnsMX" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+<div class="row"><label class="fileBtn grow" for="excelFiles">Agregar Excel</label><input id="excelFiles" type="file" accept=".xlsx,.xls,.xlsm" multiple><button id="toggleImport">Hojas</button></div>
+<div class="panel" id="importPanel"><div class="panelHead"><strong>Archivos y hojas</strong><span id="bookCount">0 archivos</span></div><div class="importBody" id="books"><div class="empty">Carga uno o varios Excel.</div></div><div style="padding:8px 10px"><button id="consolidate" class="primary" style="width:100%" disabled>Consolidar hojas seleccionadas</button><div class="hint">La clave se toma del nombre del archivo y puede editarse. Selecciona la columna que contiene los códigos.</div></div></div>
+<div class="stats"><span>Códigos cargados: <b id="loadedCount">0</b></span><span>Servicios: <b id="serviceCount">0</b></span><span>Duplicados omitidos: <b id="duplicateCount">0</b></span></div>
+<div class="row"><button id="torch" disabled>🔦 Linterna</button><div class="grow"><label>Zoom: <span id="zoomValue">1.0×</span></label><input id="zoom" type="range" min="1" max="1" step="0.1" value="1" disabled></div></div>
+<div class="result"><strong id="value">Sin lectura</strong><div class="meta" id="meta">Carga el Packing List e inicia la cámara.</div></div>
+<div class="row"><button id="start" class="primary grow">Iniciar cámara</button><button id="sample" class="sample" disabled>📷 Muestra</button><button id="clearCurrent">Limpiar</button></div>
+<div class="panel"><div class="panelHead"><strong>Histórico</strong><span id="count">0</span></div><div class="historyList" id="history"><div class="empty">Aún no hay lecturas.</div></div></div>
+<div class="row"><button id="clearHistory" class="grow">Vaciar histórico</button><button id="clearFiles" class="danger">Quitar Excel</button></div>
+<div class="status" id="status">La cámara requiere HTTPS o GitHub Pages.</div>
+</section></div>
+<script>
+const $=s=>document.querySelector(s),video=$('#video'),statusEl=$('#status'),badge=$('#engineBadge');
+let stream=null,track=null,running=false,torchOn=false,detector=null,timer=0,lastAccepted='',lastAt=0,currentRecordId=null,books=[],catalog=new Map(),duplicates=0;
+const records=[],formats=['code_128','code_39','code_93','codabar','ean_13','ean_8','itf','upc_a','upc_e'];
+const setStatus=t=>statusEl.textContent=t;
+const normalize=v=>String(v??'').trim().toUpperCase().replace(/[\s\-_./]+/g,'').replace(/[^\p{L}\p{N}]/gu,'');
+function colName(n){let s='';for(n++;n;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s}
+function isLikelyCode(v){const s=normalize(v);if(s.length<3||s.length>45)return false;if(/^(TOTAL|TOTALES|CODIGO|CODIGOS|PAQUETE|PAQUETES|BUNDLE|PACKAGE|ID|ETIQUETA)$/.test(s))return false;return /\d/.test(s)&&/^[A-Z0-9]+$/.test(s)}
+function headerScore(v){return /(CODIGO|CODE|PAQUETE|PACKAGE|BUNDLE|ETIQUETA|LABEL|MARCA|ID)/.test(normalize(v))?10:0}
+function analyzeSheet(rows){
+ const maxCols=Math.max(1,...rows.slice(0,60).map(r=>r.length));let headerRow=0,best=-1;
+ for(let r=0;r<Math.min(20,rows.length);r++){const score=rows[r].reduce((a,v)=>a+headerScore(v)+(String(v??'').trim()?.05:0),0);if(score>best){best=score;headerRow=r}}
+ const scores=[];for(let c=0;c<maxCols;c++){let good=0,filled=0;for(let r=Math.min(headerRow+1,rows.length);r<Math.min(rows.length,headerRow+121);r++){const v=rows[r]?.[c];if(String(v??'').trim()){filled++;if(isLikelyCode(v))good++}}scores[c]=(filled?good/filled:0)+(headerScore(rows[headerRow]?.[c])?1:0)}
+ let column=scores.indexOf(Math.max(...scores));if(column<0)column=0;return{headerRow,column,maxCols}
+}
+function beep(ok=true){try{const C=window.AudioContext||window.webkitAudioContext,c=new C(),o=c.createOscillator(),g=c.createGain();o.type=ok?'square':'sawtooth';o.frequency.value=ok?1250:330;g.gain.setValueAtTime(.65,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.2);o.connect(g).connect(c.destination);o.start();o.stop(c.currentTime+.2);setTimeout(()=>c.close(),300)}catch(e){}}
+function esc(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+function renderBooks(){
+ $('#bookCount').textContent=`${books.length} archivo${books.length===1?'':'s'}`;$('#consolidate').disabled=!books.length;
+ if(!books.length){$('#books').innerHTML='<div class="empty">Carga uno o varios Excel.</div>';return}
+ $('#books').innerHTML=books.map((b,bi)=>`<div class="book"><div class="bookTop"><div class="grow"><div class="bookName">${esc(b.name)}</div><input class="bookKey" data-bi="${bi}" type="text" value="${esc(b.key)}" placeholder="Clave del servicio"></div><button class="removeBook" data-bi="${bi}">✕</button></div>${b.sheets.map((s,si)=>`<div class="sheet"><input class="sheetCheck" type="checkbox" data-bi="${bi}" data-si="${si}" ${s.selected?'checked':''}><span class="sheetName">${esc(s.name)}</span><select class="colSelect" data-bi="${bi}" data-si="${si}">${Array.from({length:s.analysis.maxCols},(_,c)=>`<option value="${c}" ${c===s.column?'selected':''}>${colName(c)} · ${esc(String(s.rows[s.analysis.headerRow]?.[c]??'sin encabezado').slice(0,22))}</option>`).join('')}</select></div>`).join('')}</div>`).join('')
+}
+async function loadFiles(files){
+ setStatus('Leyendo archivos Excel…');
+ for(const file of files){try{const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:false});const sheets=wb.SheetNames.map(name=>{const rows=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:'',raw:false,blankrows:false});const analysis=analyzeSheet(rows);return{name,rows,analysis,column:analysis.column,selected:false}});if(sheets.length===1)sheets[0].selected=true;books.push({name:file.name,key:file.name.replace(/\.[^.]+$/,''),sheets})}catch(e){setStatus(`No se pudo leer ${file.name}: ${e.message}`)}}
+ renderBooks();setStatus(`${books.length} archivo(s) disponibles. Selecciona las hojas.`)
+}
+function consolidate(){
+ catalog=new Map();duplicates=0;const services=new Set();
+ for(const b of books){b.key=b.key.trim()||b.name.replace(/\.[^.]+$/,'');for(const s of b.sheets){if(!s.selected)continue;services.add(b.key);for(let r=Math.min(s.analysis.headerRow+1,s.rows.length);r<s.rows.length;r++){const raw=String(s.rows[r]?.[s.column]??'').trim(),norm=normalize(raw);if(!raw||!isLikelyCode(raw))continue;const id=`${b.key}¦${norm}`;if(catalog.has(id)){duplicates++;continue}catalog.set(id,{raw,norm,key:b.key,file:b.name,sheet:s.name})}}}
+ $('#loadedCount').textContent=catalog.size;$('#serviceCount').textContent=services.size;$('#duplicateCount').textContent=duplicates;setStatus(catalog.size?`${catalog.size} códigos consolidados.`:'No se encontraron códigos.');if(catalog.size)$('#importPanel').style.display='none'
+}
+function matchesFor(norm){return [...catalog.values()].filter(x=>x.norm===norm)}
+function renderHistory(){
+ $('#count').textContent=records.length;const h=$('#history');if(!records.length){h.innerHTML='<div class="empty">Aún no hay lecturas.</div>';return}
+ h.innerHTML=records.map(r=>`<div class="item ${r.sample?'sampled':r.found?'ok':'bad'}"><span class="icon">${r.sample?'📷':r.found?'✓':'!'}</span><span class="code">${esc(r.code)}</span><span class="key">${esc(r.key||'NO ENCONTRADO')}</span></div>`).join('')
+}
+function accept(code){
+ const norm=normalize(code),now=Date.now();if(!norm||(norm===lastAccepted&&now-lastAt<1800))return;lastAccepted=norm;lastAt=now;
+ const matches=matchesFor(norm),keys=[...new Set(matches.map(m=>m.key))],found=matches.length>0,key=keys.length===1?keys[0]:keys.length>1?keys.join('/'):'';
+ const rec={id:String(now)+Math.random(),code:String(code).trim(),norm,key,found,sample:false};records.unshift(rec);currentRecordId=rec.id;
+ $('#value').textContent=rec.code;$('#meta').textContent=found?(keys.length>1?`Coincide en ${keys.length} servicios: ${key}`:`Encontrado · ${key}`):'No encontrado en los Packing List cargados';$('#sample').disabled=false;$('#sample').textContent='📷 Muestra';renderHistory();beep(found);$('#viewer').classList.remove('flash');void $('#viewer').offsetWidth;$('#viewer').classList.add('flash')
+}
+const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
+function capture(){const vw=video.videoWidth,vh=video.videoHeight;if(!vw||!vh)return video;const x=vw*.04,y=vh*.36,w=vw*.92,h=vh*.28,scale=1.35;canvas.width=Math.max(480,Math.round(w*scale));canvas.height=Math.max(180,Math.round(h*scale));ctx.drawImage(video,x,y,w,h,0,0,canvas.width,canvas.height);return canvas}
+async function setupDetector(){if(!('BarcodeDetector'in window))throw new Error('Motor nativo no disponible');const supported=await BarcodeDetector.getSupportedFormats(),usable=formats.filter(f=>supported.includes(f));detector=new BarcodeDetector(usable.length?{formats:usable}:undefined);return usable.length}
+async function loop(){if(!running||!detector)return;try{const f=await detector.detect(capture());if(f?.length)accept(f[0].rawValue)}catch(e){}timer=setTimeout(loop,100)}
+function capabilities(){const c=track?.getCapabilities?.()||{},z=$('#zoom');if(c.zoom){z.min=c.zoom.min;z.max=c.zoom.max;z.step=c.zoom.step||.1;z.value=c.zoom.min;z.disabled=false;$('#zoomValue').textContent=Number(z.value).toFixed(1)+'×'}else z.disabled=true;$('#torch').disabled=!c.torch}
+async function stop(){running=false;clearTimeout(timer);if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;track=null;video.srcObject=null;$('#start').textContent='Iniciar cámara';badge.textContent='Detenido'}
+async function start(){if(!catalog.size){setStatus('Primero carga y consolida al menos una hoja.');$('#importPanel').style.display='block';return}await stop();setStatus('Solicitando cámara…');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});video.srcObject=stream;await video.play();track=stream.getVideoTracks()[0];const n=await setupDetector();running=true;capabilities();badge.textContent='Motor nativo';$('#start').textContent='Detener';setStatus(`${track.label||'Cámara trasera'} · ${n} formatos`);loop()}catch(e){badge.textContent='Error';setStatus('No se pudo iniciar: '+e.message)}}
+$('#excelFiles').onchange=async e=>{await loadFiles([...e.target.files]);e.target.value=''};
+$('#books').oninput=e=>{const bi=+e.target.dataset.bi,si=+e.target.dataset.si;if(e.target.classList.contains('bookKey'))books[bi].key=e.target.value;if(e.target.classList.contains('sheetCheck'))books[bi].sheets[si].selected=e.target.checked;if(e.target.classList.contains('colSelect'))books[bi].sheets[si].column=+e.target.value};
+$('#books').onclick=e=>{if(e.target.classList.contains('removeBook')){books.splice(+e.target.dataset.bi,1);renderBooks()}};
+$('#toggleImport').onclick=()=>$('#importPanel').style.display=$('#importPanel').style.display==='none'?'block':'none';
+$('#consolidate').onclick=consolidate;$('#start').onclick=()=>running?stop():start();
+$('#torch').onclick=async()=>{if(!track)return;torchOn=!torchOn;try{await track.applyConstraints({advanced:[{torch:torchOn}]});$('#torch').classList.toggle('active',torchOn)}catch(e){setStatus('Linterna no disponible')}};
+$('#zoom').oninput=async e=>{const v=+e.target.value;$('#zoomValue').textContent=v.toFixed(1)+'×';try{await track.applyConstraints({advanced:[{zoom:v}]})}catch(e){}};
+$('#sample').onclick=()=>{const r=records.find(x=>x.id===currentRecordId);if(!r)return;r.sample=!r.sample;renderHistory();$('#sample').textContent=r.sample?'✓ Muestra':'📷 Muestra';setStatus(r.sample?'Código marcado como muestra.':'Marca retirada.')};
+$('#clearCurrent').onclick=()=>{currentRecordId=null;lastAccepted='';$('#value').textContent='Sin lectura';$('#meta').textContent='Carga el Packing List e inicia la cámara.';$('#sample').disabled=true};
+$('#clearHistory').onclick=()=>{records.length=0;currentRecordId=null;lastAccepted='';renderHistory();setStatus('Histórico vaciado.')};
+$('#clearFiles').onclick=()=>{books=[];catalog=new Map();duplicates=0;renderBooks();$('#loadedCount').textContent='0';$('#serviceCount').textContent='0';$('#duplicateCount').textContent='0';$('#importPanel').style.display='block';setStatus('Archivos retirados.')};
+window.addEventListener('beforeunload',stop);if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js');
+</script></body></html>  <div class="row"><label class="fileBtn grow" for="excelFile">Elegir Excel</label><input id="excelFile" type="file" accept=".xlsx,.xls"><input id="serviceKey" class="grow" type="text" placeholder="Clave: 362f7627cnsMX" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
   <div class="row"><button id="torch" disabled>🔦 Linterna</button><div class="grow"><label>Zoom: <span id="zoomValue">1.0×</span></label><input id="zoom" type="range" min="1" max="1" step="0.1" value="1" disabled></div></div>
   <div class="result"><strong id="value">Sin lectura</strong><div class="meta" id="meta">Ingresa la clave y apunta hacia un código.</div></div>
   <div class="row"><button id="start" class="primary grow">Iniciar cámara</button><button id="sample" class="sample" disabled>📷 Muestra</button><button id="clearCurrent">Limpiar</button></div>
