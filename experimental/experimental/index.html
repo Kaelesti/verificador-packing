@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Scanner Experimental v0.2.3</title>
+<title>Scanner Experimental v0.2.4</title>
 <style>
 :root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--text:#f7fbff;--muted:#b9cad8}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -19,33 +19,33 @@ header h1{font-size:17px;margin:0}header small{display:block;color:var(--muted)}
 .controls{background:var(--panel2);padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:grid;gap:8px;max-height:52vh;overflow:auto}
 .row{display:flex;gap:7px;align-items:center}.grow{flex:1;min-width:0}button,input{font:inherit}
 button{border:0;border-radius:11px;background:#183e5d;color:white;padding:10px 12px;font-weight:650}button.primary{background:#1a73e8}button.sample{background:#7a651f}button.active{outline:2px solid #d8edff;background:#245777}button:disabled{opacity:.45}
-input[type=text]{width:100%;background:#132f49;color:white;border:1px solid #345a75;border-radius:9px;padding:10px}input[type=file]{display:none}input[type=range]{width:100%}
+input[type=text],select{width:100%;background:#132f49;color:white;border:1px solid #345a75;border-radius:9px;padding:10px}input[type=file]{display:none}input[type=range]{width:100%}
 label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center;border-radius:11px;background:#183e5d;color:white;padding:10px 12px;font-weight:650}
 .result{border:1px solid var(--line);border-radius:12px;padding:9px 10px;background:#0d263b;min-height:58px}.result strong{display:block;font-size:17px;word-break:break-all}.meta,.status{font-size:12px;color:var(--muted);margin-top:4px}
 .history{border:1px solid var(--line);border-radius:12px;background:#0d263b;overflow:hidden}.historyHead{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
 .historyList{max-height:150px;overflow:auto}.empty{padding:12px;color:var(--muted);font-size:13px;text-align:center}
 .item{display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid rgba(49,86,111,.6);font-variant-numeric:tabular-nums}.item:last-child{border-bottom:0}
 .item.sampled{background:rgba(255,207,92,.14);box-shadow:inset 4px 0 0 var(--sample)}.code{font-weight:750;word-break:break-all}.key{margin-left:auto;color:var(--muted);font-weight:650;white-space:nowrap}.camera{display:none}.item.sampled .camera{display:inline}
-.services{border:1px solid var(--line);border-radius:12px;background:#0d263b;overflow:hidden}
-.servicesHead{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
-.servicesList{max-height:145px;overflow:auto}.serviceRow{display:grid;grid-template-columns:auto 1fr auto;gap:7px;align-items:center;padding:7px 9px;border-bottom:1px solid rgba(49,86,111,.6)}
-.serviceRow:last-child{border-bottom:0}.serviceRow input[type=text]{padding:8px}.serviceRow.active{background:rgba(43,213,118,.1);box-shadow:inset 4px 0 0 var(--ok)}
-.mini{padding:8px 10px}.flash{animation:flash .35s}@keyframes flash{50%{box-shadow:inset 0 0 0 6px var(--ok)}}@media(min-width:800px){.app{max-width:720px;margin:auto;border-inline:1px solid #244761}}
+.flash{animation:flash .35s}@keyframes flash{50%{box-shadow:inset 0 0 0 6px var(--ok)}}@media(min-width:800px){.app{max-width:720px;margin:auto;border-inline:1px solid #244761}}
 </style>
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.2.3</h1><small>Nativo · ingreso manual · múltiples servicios</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<header><div><h1>Scanner Experimental v0.2.4</h1><small>Nativo · ingreso manual · varios servicios</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
 <main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
 <section class="controls">
   <div class="row">
     <label class="fileBtn grow" for="excelFiles">Agregar Excel</label>
     <input id="excelFiles" type="file" accept=".xlsx,.xls,.xlsm" multiple>
-    <button id="toggleServices">Servicios</button>
+    <span id="fileCount" class="meta">0 archivos</span>
   </div>
-  <div class="services" id="servicesPanel">
-    <div class="servicesHead"><strong>Servicios cargados</strong><span id="serviceCount">0</span></div>
-    <div class="servicesList" id="servicesList"><div class="empty">Carga uno o varios Excel.</div></div>
+  <div class="row">
+    <select id="serviceSelect" class="grow" disabled>
+      <option value="">Sin servicios cargados</option>
+    </select>
+    <input id="serviceKey" class="grow" type="text"
+      placeholder="Clave: 362f7627cnsMX"
+      autocomplete="off" autocapitalize="off" spellcheck="false" disabled>
   </div>
 
   <div class="row">
@@ -66,47 +66,10 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 <script>
 const $=s=>document.querySelector(s),video=$('#video'),statusEl=$('#status'),badge=$('#engineBadge');
 let stream=null,track=null,running=false,torchOn=false,detector=null,timer=0,lastAccepted='',lastAt=0,currentCode='';
-let services=[],activeServiceId=null;
+let services=[];
 const records=[],formats=['code_128','code_39','code_93','codabar','ean_13','ean_8','itf','upc_a','upc_e'];
 function setStatus(t){statusEl.textContent=t}
-function serviceKey(){
-  const s=services.find(x=>x.id===activeServiceId);
-  return s?.key?.trim()||'';
-}
-function esc(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
-function renderServices(){
-  $('#serviceCount').textContent=services.length;
-  const box=$('#servicesList');
-  if(!services.length){
-    box.innerHTML='<div class="empty">Carga uno o varios Excel.</div>';
-    return;
-  }
-  box.innerHTML=services.map(s=>`<div class="serviceRow ${s.id===activeServiceId?'active':''}">
-    <input class="serviceRadio" type="radio" name="activeService" data-id="${s.id}" ${s.id===activeServiceId?'checked':''}>
-    <div><input class="serviceInput" data-id="${s.id}" type="text" value="${esc(s.key)}"><div class="meta">${esc(s.fileName)}</div></div>
-    <button class="removeService mini" data-id="${s.id}">✕</button>
-  </div>`).join('');
-}
-function addFiles(files){
-  const added=[];
-  for(const file of Array.from(files||[])){
-    if(!file || !file.name)continue;
-    const id=(crypto.randomUUID?.()||String(Date.now())+Math.random());
-    const service={
-      id,
-      fileName:file.name,
-      key:file.name.replace(/\.[^.]+$/,'')
-    };
-    services.push(service);
-    added.push(service);
-    if(!activeServiceId)activeServiceId=id;
-  }
-  renderServices();
-  $('#servicesPanel').style.display='block';
-  setStatus(added.length
-    ? `${added.length} archivo(s) cargado(s). Selecciona el servicio activo.`
-    : 'No se pudo agregar ningún archivo.');
-}
+function serviceKey(){return $('#serviceKey').value.trim()}
 function beep(){try{const C=window.AudioContext||window.webkitAudioContext,c=new C(),o=c.createOscillator(),g=c.createGain();o.type='square';o.frequency.setValueAtTime(1250,c.currentTime);g.gain.setValueAtTime(.65,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.2);o.connect(g).connect(c.destination);o.start();o.stop(c.currentTime+.2);setTimeout(()=>c.close(),300)}catch(e){}}
 function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function render(){const h=$('#history');$('#count').textContent=records.length;if(!records.length){h.innerHTML='<div class="empty">Aún no hay lecturas.</div>';return}h.innerHTML=records.map((r,i)=>`<div class="item ${r.sample?'sampled':''}" data-i="${i}"><span class="camera">📷</span><span class="code">${escapeHtml(r.code)}</span><span class="key">${escapeHtml(r.key)}</span></div>`).join('');h.scrollTop=0}
@@ -138,39 +101,54 @@ async function setupDetector(){if(!('BarcodeDetector' in window))throw new Error
 async function loop(){if(!running||!detector)return;try{const found=await detector.detect(capture());if(found?.length)accept(found[0].rawValue)}catch(e){}timer=setTimeout(loop,100)}
 function capabilities(){const c=track?.getCapabilities?.()||{},z=$('#zoom');if(c.zoom){z.min=c.zoom.min;z.max=c.zoom.max;z.step=c.zoom.step||.1;z.value=c.zoom.min;z.disabled=false;$('#zoomValue').textContent=Number(z.value).toFixed(1)+'×'}else z.disabled=true;$('#torch').disabled=!c.torch}
 async function stop(){running=false;clearTimeout(timer);if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;track=null;video.srcObject=null;$('#start').textContent='Iniciar cámara';badge.textContent='Detenido'}
-async function start(){if(!serviceKey()){setStatus('Carga o selecciona primero un servicio.');$('#servicesPanel').style.display='block';return}await stop();setStatus('Solicitando cámara trasera…');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});video.srcObject=stream;await video.play();track=stream.getVideoTracks()[0];const n=await setupDetector();running=true;capabilities();badge.textContent='Motor nativo';$('#start').textContent='Detener';setStatus(`${track.label||'Cámara trasera'} · ${n} formatos`);loop()}catch(e){running=false;badge.textContent='Error';setStatus('No se pudo iniciar: '+e.message)}}
+async function start(){if(!serviceKey()){setStatus('Escribe o carga primero la clave del servicio.');$('#serviceKey').focus();return}await stop();setStatus('Solicitando cámara trasera…');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});video.srcObject=stream;await video.play();track=stream.getVideoTracks()[0];const n=await setupDetector();running=true;capabilities();badge.textContent='Motor nativo';$('#start').textContent='Detener';setStatus(`${track.label||'Cámara trasera'} · ${n} formatos`);loop()}catch(e){running=false;badge.textContent='Error';setStatus('No se pudo iniciar: '+e.message)}}
 
-const excelInput = $('#excelFiles');
-excelInput.addEventListener('change', function(){
-  const files = Array.from(this.files || []);
-  if(!files.length){
+function renderServiceSelect(){
+  const select=$('#serviceSelect');
+  if(!services.length){
+    select.innerHTML='<option value="">Sin servicios cargados</option>';
+    select.disabled=true;
+    $('#serviceKey').value='';
+    $('#serviceKey').disabled=true;
+    $('#fileCount').textContent='0 archivos';
+    return;
+  }
+  select.innerHTML=services.map((s,i)=>
+    `<option value="${i}">${escapeHtml(s.fileName)}</option>`
+  ).join('');
+  select.disabled=false;
+  $('#serviceKey').disabled=false;
+  select.value=String(services.length-1);
+  $('#serviceKey').value=services[services.length-1].key;
+  $('#fileCount').textContent=`${services.length} archivo${services.length===1?'':'s'}`;
+}
+$('#excelFiles').addEventListener('change',function(){
+  const selected=Array.from(this.files||[]);
+  if(!selected.length){
     setStatus('No se seleccionaron archivos.');
     return;
   }
-  addFiles(files);
-  setStatus(`${files.length} archivo(s) seleccionado(s) y cargado(s).`);
-  this.value = '';
+  for(const file of selected){
+    services.push({
+      fileName:file.name,
+      key:file.name.replace(/\.[^.]+$/,'')
+    });
+  }
+  renderServiceSelect();
+  setStatus(`${selected.length} archivo(s) agregado(s). Servicio activo: ${serviceKey()}`);
+  this.value='';
+});
+$('#serviceSelect').addEventListener('change',function(){
+  const i=Number(this.value);
+  if(!Number.isInteger(i)||!services[i])return;
+  $('#serviceKey').value=services[i].key;
+  setStatus(`Servicio activo: ${services[i].key}`);
+});
+$('#serviceKey').addEventListener('input',function(){
+  const i=Number($('#serviceSelect').value);
+  if(Number.isInteger(i)&&services[i])services[i].key=this.value;
 });
 
-$('#toggleServices').onclick=()=>{$('#servicesPanel').style.display=$('#servicesPanel').style.display==='none'?'block':'none'};
-$('#servicesList').oninput=e=>{
-  if(e.target.classList.contains('serviceInput')){
-    const s=services.find(x=>x.id===e.target.dataset.id);
-    if(s)s.key=e.target.value;
-  }
-};
-$('#servicesList').onclick=e=>{
-  const id=e.target.dataset.id;
-  if(e.target.classList.contains('serviceRadio')){
-    activeServiceId=id;renderServices();setStatus(`Servicio activo: ${serviceKey()}`);
-  }
-  if(e.target.classList.contains('removeService')){
-    services=services.filter(x=>x.id!==id);
-    if(activeServiceId===id)activeServiceId=services[0]?.id||null;
-    renderServices();
-    setStatus('Servicio retirado.');
-  }
-};
 
 $('#verifyManual').onclick=verifyManual;
 $('#manualCode').addEventListener('keydown',e=>{
