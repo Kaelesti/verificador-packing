@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Scanner Experimental v0.3.1</title>
+<title>Scanner Experimental v0.3.2</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
@@ -35,7 +35,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.3.1</h1><small>Nativo · múltiples Excel, hojas e ingreso manual</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<header><div><h1>Scanner Experimental v0.3.2</h1><small>Nativo · múltiples Excel, hojas e ingreso manual</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
 <main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="scanbox"><div class="scanline"></div></div></main>
 <section class="controls">
 <div class="row"><label class="fileBtn grow" for="excelFiles">Agregar Excel</label><input id="excelFiles" type="file" accept=".xlsx,.xls,.xlsm" multiple><button id="toggleImport">Hojas</button></div>
@@ -106,7 +106,7 @@ async function setupDetector(){if(!('BarcodeDetector'in window))throw new Error(
 async function loop(){if(!running||!detector)return;try{const f=await detector.detect(capture());if(f?.length)accept(f[0].rawValue)}catch(e){}timer=setTimeout(loop,100)}
 function capabilities(){const c=track?.getCapabilities?.()||{},z=$('#zoom');if(c.zoom){z.min=c.zoom.min;z.max=c.zoom.max;z.step=c.zoom.step||.1;z.value=c.zoom.min;z.disabled=false;$('#zoomValue').textContent=Number(z.value).toFixed(1)+'×'}else z.disabled=true;$('#torch').disabled=!c.torch}
 async function stop(){running=false;clearTimeout(timer);if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;track=null;video.srcObject=null;$('#start').textContent='Iniciar cámara';badge.textContent='Detenido'}
-async function start(){if(!catalog.size){setStatus('Primero carga y consolida al menos una hoja.');$('#importPanel').style.display='block';return}await stop();setStatus('Solicitando cámara…');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});video.srcObject=stream;await video.play();track=stream.getVideoTracks()[0];const n=await setupDetector();running=true;capabilities();badge.textContent='Motor nativo';$('#start').textContent='Detener';setStatus(`${track.label||'Cámara trasera'} · ${n} formatos`);loop()}catch(e){badge.textContent='Error';setStatus('No se pudo iniciar: '+e.message)}}
+async function start(){await stop();setStatus('Solicitando cámara…');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});video.srcObject=stream;await video.play();track=stream.getVideoTracks()[0];const n=await setupDetector();running=true;capabilities();badge.textContent='Motor nativo';$('#start').textContent='Detener';setStatus(catalog.size?`${track.label||'Cámara trasera'} · ${n} formatos · ${catalog.size} códigos cargados`:`${track.label||'Cámara trasera'} · ${n} formatos · sin Packing List cargado`);loop()}catch(e){running=false;badge.textContent='Error';setStatus('No se pudo iniciar: '+e.message)}}
 $('#excelFiles').onchange=async e=>{await loadFiles([...e.target.files]);e.target.value=''};
 $('#books').oninput=e=>{const bi=+e.target.dataset.bi,si=+e.target.dataset.si;if(e.target.classList.contains('bookKey'))books[bi].key=e.target.value;if(e.target.classList.contains('sheetCheck'))books[bi].sheets[si].selected=e.target.checked;if(e.target.classList.contains('colSelect'))books[bi].sheets[si].column=+e.target.value};
 $('#books').onclick=e=>{if(e.target.classList.contains('removeBook')){books.splice(+e.target.dataset.bi,1);renderBooks()}};
