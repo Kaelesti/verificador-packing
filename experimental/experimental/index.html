@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Scanner Experimental v0.3</title>
+<title>Scanner Experimental v0.3.1</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
@@ -35,7 +35,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.3</h1><small>Nativo · múltiples Excel y hojas</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<header><div><h1>Scanner Experimental v0.3.1</h1><small>Nativo · múltiples Excel, hojas e ingreso manual</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
 <main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="scanbox"><div class="scanline"></div></div></main>
 <section class="controls">
 <div class="row"><label class="fileBtn grow" for="excelFiles">Agregar Excel</label><input id="excelFiles" type="file" accept=".xlsx,.xls,.xlsm" multiple><button id="toggleImport">Hojas</button></div>
@@ -85,12 +85,21 @@ function renderHistory(){
  $('#count').textContent=records.length;const h=$('#history');if(!records.length){h.innerHTML='<div class="empty">Aún no hay lecturas.</div>';return}
  h.innerHTML=records.map(r=>`<div class="item ${r.sample?'sampled':r.found?'ok':'bad'}"><span class="icon">${r.sample?'📷':r.found?'✓':'!'}</span><span class="code">${esc(r.code)}</span><span class="key">${esc(r.key||'NO ENCONTRADO')}</span></div>`).join('')
 }
-function accept(code){
+function accept(code,source='cámara'){
  const norm=normalize(code),now=Date.now();if(!norm||(norm===lastAccepted&&now-lastAt<1800))return;lastAccepted=norm;lastAt=now;
  const matches=matchesFor(norm),keys=[...new Set(matches.map(m=>m.key))],found=matches.length>0,key=keys.length===1?keys[0]:keys.length>1?keys.join('/'):'';
  const rec={id:String(now)+Math.random(),code:String(code).trim(),norm,key,found,sample:false};records.unshift(rec);currentRecordId=rec.id;
  $('#value').textContent=rec.code;$('#meta').textContent=found?(keys.length>1?`Coincide en ${keys.length} servicios: ${key}`:`Encontrado · ${key}`):'No encontrado en los Packing List cargados';$('#sample').disabled=false;$('#sample').textContent='📷 Muestra';renderHistory();beep(found);$('#viewer').classList.remove('flash');void $('#viewer').offsetWidth;$('#viewer').classList.add('flash')
 }
+
+function verifyManual(){
+  const input=$('#manualCode'),value=input.value;
+  if(!value.trim()){setStatus('Escribe o pega un código.');input.focus();return}
+  accept(value,'manual');
+  input.value='';
+  input.focus();
+}
+
 const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
 function capture(){const vw=video.videoWidth,vh=video.videoHeight;if(!vw||!vh)return video;const x=vw*.04,y=vh*.36,w=vw*.92,h=vh*.28,scale=1.35;canvas.width=Math.max(480,Math.round(w*scale));canvas.height=Math.max(180,Math.round(h*scale));ctx.drawImage(video,x,y,w,h,0,0,canvas.width,canvas.height);return canvas}
 async function setupDetector(){if(!('BarcodeDetector'in window))throw new Error('Motor nativo no disponible');const supported=await BarcodeDetector.getSupportedFormats(),usable=formats.filter(f=>supported.includes(f));detector=new BarcodeDetector(usable.length?{formats:usable}:undefined);return usable.length}
@@ -102,7 +111,24 @@ $('#excelFiles').onchange=async e=>{await loadFiles([...e.target.files]);e.targe
 $('#books').oninput=e=>{const bi=+e.target.dataset.bi,si=+e.target.dataset.si;if(e.target.classList.contains('bookKey'))books[bi].key=e.target.value;if(e.target.classList.contains('sheetCheck'))books[bi].sheets[si].selected=e.target.checked;if(e.target.classList.contains('colSelect'))books[bi].sheets[si].column=+e.target.value};
 $('#books').onclick=e=>{if(e.target.classList.contains('removeBook')){books.splice(+e.target.dataset.bi,1);renderBooks()}};
 $('#toggleImport').onclick=()=>$('#importPanel').style.display=$('#importPanel').style.display==='none'?'block':'none';
-$('#consolidate').onclick=consolidate;$('#start').onclick=()=>running?stop():start();
+$('#consolidate').onclick=consolidate;
+$('#verifyManual').onclick=verifyManual;
+$('#manualCode').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){e.preventDefault();verifyManual()}
+});
+$('#paste').onclick=async()=>{
+  try{
+    const t=await navigator.clipboard.readText();
+    $('#manualCode').value=t.trim();
+    $('#manualCode').focus();
+    setStatus(t.trim()?'Código pegado. Pulsa Verificar.':'El portapapeles está vacío.');
+  }catch(e){
+    setStatus('El navegador no permitió leer el portapapeles. Mantén pulsado y usa Pegar.');
+    $('#manualCode').focus();
+  }
+};
+
+$('#start').onclick=()=>running?stop():start();
 $('#torch').onclick=async()=>{if(!track)return;torchOn=!torchOn;try{await track.applyConstraints({advanced:[{torch:torchOn}]});$('#torch').classList.toggle('active',torchOn)}catch(e){setStatus('Linterna no disponible')}};
 $('#zoom').oninput=async e=>{const v=+e.target.value;$('#zoomValue').textContent=v.toFixed(1)+'×';try{await track.applyConstraints({advanced:[{zoom:v}]})}catch(e){}};
 $('#sample').onclick=()=>{const r=records.find(x=>x.id===currentRecordId);if(!r)return;r.sample=!r.sample;renderHistory();$('#sample').textContent=r.sample?'✓ Muestra':'📷 Muestra';setStatus(r.sample?'Código marcado como muestra.':'Marca retirada.')};
@@ -110,40 +136,4 @@ $('#clearCurrent').onclick=()=>{currentRecordId=null;lastAccepted='';$('#value')
 $('#clearHistory').onclick=()=>{records.length=0;currentRecordId=null;lastAccepted='';renderHistory();setStatus('Histórico vaciado.')};
 $('#clearFiles').onclick=()=>{books=[];catalog=new Map();duplicates=0;renderBooks();$('#loadedCount').textContent='0';$('#serviceCount').textContent='0';$('#duplicateCount').textContent='0';$('#importPanel').style.display='block';setStatus('Archivos retirados.')};
 window.addEventListener('beforeunload',stop);if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js');
-</script></body></html>  <div class="row"><label class="fileBtn grow" for="excelFile">Elegir Excel</label><input id="excelFile" type="file" accept=".xlsx,.xls"><input id="serviceKey" class="grow" type="text" placeholder="Clave: 362f7627cnsMX" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
-  <div class="row"><button id="torch" disabled>🔦 Linterna</button><div class="grow"><label>Zoom: <span id="zoomValue">1.0×</span></label><input id="zoom" type="range" min="1" max="1" step="0.1" value="1" disabled></div></div>
-  <div class="result"><strong id="value">Sin lectura</strong><div class="meta" id="meta">Ingresa la clave y apunta hacia un código.</div></div>
-  <div class="row"><button id="start" class="primary grow">Iniciar cámara</button><button id="sample" class="sample" disabled>📷 Muestra</button><button id="clearCurrent">Limpiar</button></div>
-  <div class="history"><div class="historyHead"><strong>Histórico</strong><span id="count">0</span></div><div class="historyList" id="history"><div class="empty">Aún no hay lecturas.</div></div></div>
-  <div class="row"><button id="clearHistory" class="grow">Vaciar histórico</button></div>
-  <div class="status" id="status">La cámara requiere HTTPS o GitHub Pages.</div>
-</section>
-</div>
-<script>
-const $=s=>document.querySelector(s),video=$('#video'),statusEl=$('#status'),badge=$('#engineBadge');
-let stream=null,track=null,running=false,torchOn=false,detector=null,timer=0,lastAccepted='',lastAt=0,currentCode='';
-const records=[],formats=['code_128','code_39','code_93','codabar','ean_13','ean_8','itf','upc_a','upc_e'];
-function setStatus(t){statusEl.textContent=t}
-function serviceKey(){return $('#serviceKey').value.trim()}
-function beep(){try{const C=window.AudioContext||window.webkitAudioContext,c=new C(),o=c.createOscillator(),g=c.createGain();o.type='square';o.frequency.setValueAtTime(1250,c.currentTime);g.gain.setValueAtTime(.65,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.2);o.connect(g).connect(c.destination);o.start();o.stop(c.currentTime+.2);setTimeout(()=>c.close(),300)}catch(e){}}
-function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
-function render(){const h=$('#history');$('#count').textContent=records.length;if(!records.length){h.innerHTML='<div class="empty">Aún no hay lecturas.</div>';return}h.innerHTML=records.map((r,i)=>`<div class="item ${r.sample?'sampled':''}" data-i="${i}"><span class="camera">📷</span><span class="code">${escapeHtml(r.code)}</span><span class="key">${escapeHtml(r.key)}</span></div>`).join('');h.scrollTop=0}
-function accept(code){if(!code)return;const key=serviceKey();if(!key){setStatus('Escribe primero la clave del servicio.');return}const now=Date.now();if(code===lastAccepted&&now-lastAt<1800)return;lastAccepted=code;lastAt=now;currentCode=code;records.unshift({code,key,sample:false});$('#value').textContent=code;$('#meta').textContent=key;$('#sample').disabled=false;$('#sample').textContent='📷 Muestra';render();beep();$('#viewer').classList.remove('flash');void $('#viewer').offsetWidth;$('#viewer').classList.add('flash')}
-const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
-function capture(){const vw=video.videoWidth,vh=video.videoHeight;if(!vw||!vh)return video;const x=vw*.04,y=vh*.36,w=vw*.92,h=vh*.28,scale=1.35;canvas.width=Math.max(480,Math.round(w*scale));canvas.height=Math.max(180,Math.round(h*scale));ctx.drawImage(video,x,y,w,h,0,0,canvas.width,canvas.height);return canvas}
-async function setupDetector(){if(!('BarcodeDetector' in window))throw new Error('Motor nativo BarcodeDetector no disponible');const supported=await BarcodeDetector.getSupportedFormats();const usable=formats.filter(f=>supported.includes(f));detector=new BarcodeDetector(usable.length?{formats:usable}:undefined);return usable.length}
-async function loop(){if(!running||!detector)return;try{const found=await detector.detect(capture());if(found?.length)accept(found[0].rawValue)}catch(e){}timer=setTimeout(loop,100)}
-function capabilities(){const c=track?.getCapabilities?.()||{},z=$('#zoom');if(c.zoom){z.min=c.zoom.min;z.max=c.zoom.max;z.step=c.zoom.step||.1;z.value=c.zoom.min;z.disabled=false;$('#zoomValue').textContent=Number(z.value).toFixed(1)+'×'}else z.disabled=true;$('#torch').disabled=!c.torch}
-async function stop(){running=false;clearTimeout(timer);if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;track=null;video.srcObject=null;$('#start').textContent='Iniciar cámara';badge.textContent='Detenido'}
-async function start(){if(!serviceKey()){setStatus('Escribe o carga primero la clave del servicio.');$('#serviceKey').focus();return}await stop();setStatus('Solicitando cámara trasera…');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});video.srcObject=stream;await video.play();track=stream.getVideoTracks()[0];const n=await setupDetector();running=true;capabilities();badge.textContent='Motor nativo';$('#start').textContent='Detener';setStatus(`${track.label||'Cámara trasera'} · ${n} formatos`);loop()}catch(e){running=false;badge.textContent='Error';setStatus('No se pudo iniciar: '+e.message)}}
-$('#excelFile').onchange=e=>{const f=e.target.files?.[0];if(!f)return;$('#serviceKey').value=f.name.replace(/\.[^.]+$/,'');setStatus('Clave tomada del nombre del archivo. Puedes editarla.');e.target.value=''};
-$('#start').onclick=()=>running?stop():start();
-$('#torch').onclick=async()=>{if(!track)return;torchOn=!torchOn;try{await track.applyConstraints({advanced:[{torch:torchOn}]});$('#torch').classList.toggle('active',torchOn)}catch(e){setStatus('Linterna no disponible')}};
-$('#zoom').oninput=async e=>{const v=Number(e.target.value);$('#zoomValue').textContent=v.toFixed(1)+'×';try{await track.applyConstraints({advanced:[{zoom:v}]})}catch(e){}};
-$('#sample').onclick=()=>{const r=records.find(x=>x.code===currentCode&&x.key===serviceKey());if(!r)return;r.sample=!r.sample;render();$('#sample').textContent=r.sample?'✓ Muestra':'📷 Muestra';setStatus(r.sample?'Código marcado como muestra.':'Marca de muestra retirada.')};
-$('#clearCurrent').onclick=()=>{currentCode='';lastAccepted='';$('#value').textContent='Sin lectura';$('#meta').textContent='Ingresa la clave y apunta hacia un código.';$('#sample').disabled=true;$('#sample').textContent='📷 Muestra'};
-$('#clearHistory').onclick=()=>{records.length=0;currentCode='';lastAccepted='';render();$('#value').textContent='Sin lectura';$('#meta').textContent='Ingresa la clave y apunta hacia un código.';$('#sample').disabled=true;$('#sample').textContent='📷 Muestra';setStatus('Histórico vaciado.')};
-window.addEventListener('beforeunload',stop);if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js');
-</script>
-</body>
-</html>
+</script></body></html>
