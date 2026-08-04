@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<title>Scanner Experimental v0.2.5</title>
+<title>Scanner Experimental v0.2.6</title>
 <style>
 :root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -22,6 +22,7 @@ header h1{font-size:17px;margin:0}header small{display:block;color:var(--muted)}
 button{border:0;border-radius:11px;background:#183e5d;color:white;padding:10px 12px;font-weight:650}button.primary{background:#1a73e8}button.sample{background:#7a651f}button.active{outline:2px solid #d8edff;background:#245777}button:disabled{opacity:.45}
 input[type=text],select{width:100%;background:#132f49;color:white;border:1px solid #345a75;border-radius:9px;padding:10px}input[type=file]{display:none}input[type=range]{width:100%}
 label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center;border-radius:11px;background:#183e5d;color:white;padding:10px 12px;font-weight:650}
+.sheetPanel{border:1px solid var(--line);border-radius:12px;background:#0d263b;overflow:hidden}.sheetHead{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}.sheetList{max-height:220px;overflow:auto}.sheetRow{display:grid;grid-template-columns:auto 1fr 1.2fr;gap:7px;align-items:center;padding:8px 10px;border-bottom:1px solid rgba(49,86,111,.55)}.sheetRow:last-child{border-bottom:0}.sheetName{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sheetStat{grid-column:2/4;font-size:11px;color:var(--muted)}.summary{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted)}.summary b{color:var(--text)}
 .result{border:1px solid var(--line);border-radius:12px;padding:9px 10px;background:#0d263b;min-height:58px}.result strong{display:block;font-size:17px;word-break:break-all}.meta,.status{font-size:12px;color:var(--muted);margin-top:4px}
 .history{border:1px solid var(--line);border-radius:12px;background:#0d263b;overflow:hidden}.historyHead{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
 .historyList{max-height:150px;overflow:auto}.empty{padding:12px;color:var(--muted);font-size:13px;text-align:center}
@@ -32,7 +33,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.2.5</h1><small>Nativo · lectura de Excel · una hoja por servicio</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<header><div><h1>Scanner Experimental v0.2.6</h1><small>Nativo · múltiples hojas por servicio</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
 <main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
 <section class="controls">
   <div class="row">
@@ -48,14 +49,15 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
       placeholder="Clave: 362f7627cnsMX"
       autocomplete="off" autocapitalize="off" spellcheck="false" disabled>
   </div>
-  <div class="row">
-    <select id="sheetSelect" class="grow" disabled>
-      <option value="">Seleccionar hoja</option>
-    </select>
-    <select id="columnSelect" class="grow" disabled>
-      <option value="">Columna de códigos</option>
-    </select>
-    <button id="loadCodes" disabled>Cargar códigos</button>
+  <div class="sheetPanel">
+    <div class="sheetHead"><strong>Hojas del servicio activo</strong><span id="sheetHint">0 seleccionadas</span></div>
+    <div id="sheetList" class="sheetList"><div class="empty">Carga un Excel para ver sus hojas.</div></div>
+    <div style="padding:8px 10px"><button id="loadCodes" class="primary" style="width:100%" disabled>Consolidar hojas seleccionadas</button></div>
+  </div>
+  <div class="summary">
+    <span>Hojas: <b id="selectedSheetCount">0</b></span>
+    <span>Códigos: <b id="loadedCodeCount">0</b></span>
+    <span>Duplicados: <b id="duplicateCount">0</b></span>
   </div>
   <div class="meta" id="excelInfo">Ningún código cargado desde Excel.</div>
 
@@ -136,73 +138,67 @@ function probableHeader(rows,column){
   }
   return 'sin encabezado';
 }
-function refreshSheetControls(){
-  const service=activeService();
-  const sheet=$('#sheetSelect'),column=$('#columnSelect'),button=$('#loadCodes');
-  sheet.innerHTML='<option value="">Seleccionar hoja</option>';
-  column.innerHTML='<option value="">Columna de códigos</option>';
-  sheet.disabled=true;column.disabled=true;button.disabled=true;
+
+function buildSheetConfigs(service){
+  service.sheetConfigs=service.workbook.SheetNames.map(name=>{
+    const rows=sheetRows(service,name);
+    return {name,rows,maxCols:Math.max(0,...rows.slice(0,100).map(r=>r.length)),selected:false,column:null,count:0};
+  });
+}
+function renderSheetControls(){
+  const service=activeService(),box=$('#sheetList');
   if(!service?.workbook){
-    $('#excelInfo').textContent=service?'El archivo no pudo leerse.':'Ningún código cargado desde Excel.';
+    box.innerHTML='<div class="empty">Carga un Excel para ver sus hojas.</div>';
+    $('#loadCodes').disabled=true;
+    $('#sheetHint').textContent='0 seleccionadas';
+    $('#selectedSheetCount').textContent='0';$('#loadedCodeCount').textContent='0';$('#duplicateCount').textContent='0';
     return;
   }
-  for(const name of service.workbook.SheetNames){
-    const option=document.createElement('option');
-    option.value=name;option.textContent=name;sheet.appendChild(option);
-  }
-  sheet.disabled=false;
-  if(service.sheetName&&service.workbook.SheetNames.includes(service.sheetName)){
-    sheet.value=service.sheetName;
-    refreshColumns();
-  }
-  $('#excelInfo').textContent=service.codes?.size
-    ? `${service.codes.size} códigos cargados · ${service.sheetName||''} · columna ${columnName(service.columnIndex||0)}`
-    : 'Selecciona una hoja y la columna que contiene los códigos.';
+  if(!service.sheetConfigs)buildSheetConfigs(service);
+  box.innerHTML=service.sheetConfigs.map((s,si)=>`
+    <div class="sheetRow">
+      <input type="checkbox" class="sheetCheck" data-si="${si}" ${s.selected?'checked':''}>
+      <span class="sheetName" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
+      <select class="sheetColumn" data-si="${si}">
+        <option value="">Columna</option>
+        ${Array.from({length:s.maxCols},(_,c)=>`<option value="${c}" ${s.column===c?'selected':''}>${columnName(c)} · ${escapeHtml(probableHeader(s.rows,c))}</option>`).join('')}
+      </select>
+      <span class="sheetStat">${s.count?`${s.count} códigos aportados`:'Sin consolidar'}</span>
+    </div>`).join('');
+  updateSheetSummary();
 }
-function refreshColumns(){
-  const service=activeService(),sheetName=$('#sheetSelect').value;
-  const column=$('#columnSelect'),button=$('#loadCodes');
-  column.innerHTML='<option value="">Columna de códigos</option>';
-  column.disabled=true;button.disabled=true;
-  if(!service||!sheetName)return;
-  const rows=sheetRows(service,sheetName);
-  const maxCols=Math.max(0,...rows.slice(0,80).map(row=>row.length));
-  for(let c=0;c<maxCols;c++){
-    const option=document.createElement('option');
-    option.value=String(c);
-    option.textContent=`${columnName(c)} · ${probableHeader(rows,c)}`;
-    column.appendChild(option);
-  }
-  column.disabled=maxCols===0;
-  if(Number.isInteger(service.columnIndex)&&service.sheetName===sheetName){
-    column.value=String(service.columnIndex);
-  }
-  button.disabled=!column.value;
-}
-function looksLikeCode(value){
-  const code=normalizeCode(value);
-  if(code.length<3||code.length>50||!/\d/.test(code))return false;
-  return !/^(TOTAL|TOTALES|CODIGO|CODIGOS|CODE|PAQUETE|PAQUETES|PACKAGE|BUNDLE|ETIQUETA|LABEL|ID)$/.test(code);
+function updateSheetSummary(){
+  const service=activeService();
+  const selected=service?.sheetConfigs?.filter(s=>s.selected).length||0;
+  $('#sheetHint').textContent=`${selected} seleccionada${selected===1?'':'s'}`;
+  $('#selectedSheetCount').textContent=selected;
+  $('#loadedCodeCount').textContent=service?.codes?.size||0;
+  $('#duplicateCount').textContent=service?.duplicates||0;
+  $('#loadCodes').disabled=!service?.sheetConfigs?.some(s=>s.selected&&Number.isInteger(s.column));
 }
 function loadActiveCodes(){
   const service=activeService();
-  const sheetName=$('#sheetSelect').value;
-  const columnIndex=Number($('#columnSelect').value);
-  if(!service||!sheetName||!Number.isInteger(columnIndex)){
-    setStatus('Selecciona una hoja y una columna.');
-    return;
+  if(!service?.sheetConfigs){setStatus('Selecciona un servicio.');return}
+  const codes=new Set();let duplicates=0,used=0;
+  for(const sheet of service.sheetConfigs){
+    sheet.count=0;
+    if(!sheet.selected||!Number.isInteger(sheet.column))continue;
+    used++;
+    const local=new Set();
+    for(const row of sheet.rows){
+      const raw=row?.[sheet.column];
+      if(looksLikeCode(raw))local.add(normalizeCode(raw));
+    }
+    sheet.count=local.size;
+    for(const code of local){
+      if(codes.has(code))duplicates++;
+      else codes.add(code);
+    }
   }
-  const rows=sheetRows(service,sheetName);
-  const codes=new Set();
-  for(const row of rows){
-    const raw=row?.[columnIndex];
-    if(looksLikeCode(raw))codes.add(normalizeCode(raw));
-  }
-  service.sheetName=sheetName;
-  service.columnIndex=columnIndex;
-  service.codes=codes;
-  $('#excelInfo').textContent=`${codes.size} códigos cargados · ${sheetName} · columna ${columnName(columnIndex)}`;
-  setStatus(codes.size?`${codes.size} códigos listos para verificar.`:'No se detectaron códigos válidos en esa columna.');
+  service.codes=codes;service.duplicates=duplicates;
+  renderSheetControls();
+  $('#excelInfo').textContent=`${codes.size} códigos consolidados desde ${used} hoja(s).`;
+  setStatus(codes.size?`${codes.size} códigos listos para verificar.`:'No se detectaron códigos válidos.');
 }
 
 function renderServiceSelect(){
@@ -210,14 +206,14 @@ function renderServiceSelect(){
   if(!services.length){
     select.innerHTML='<option value="">Sin servicios cargados</option>';
     select.disabled=true;$('#serviceKey').value='';$('#serviceKey').disabled=true;
-    $('#fileCount').textContent='0 archivos';refreshSheetControls();return;
+    $('#fileCount').textContent='0 archivos';renderSheetControls();return;
   }
   select.innerHTML=services.map((s,i)=>`<option value="${i}">${escapeHtml(s.fileName)}</option>`).join('');
   select.disabled=false;$('#serviceKey').disabled=false;
   select.value=String(services.length-1);
   $('#serviceKey').value=services[services.length-1].key;
   $('#fileCount').textContent=`${services.length} archivo${services.length===1?'':'s'}`;
-  refreshSheetControls();
+  renderSheetControls();
 }
 $('#excelFiles').addEventListener('change',async function(){
   const selected=Array.from(this.files||[]);
@@ -238,9 +234,9 @@ $('#excelFiles').addEventListener('change',async function(){
         fileName:file.name,
         key:file.name.replace(/\.[^.]+$/,''),
         workbook,
-        sheetName:'',
-        columnIndex:null,
-        codes:new Set()
+        sheetConfigs:null,
+        codes:new Set(),
+        duplicates:0
       });
       loaded++;
     }catch(error){
@@ -256,18 +252,17 @@ $('#serviceSelect').addEventListener('change',function(){
   const i=Number(this.value);
   if(!Number.isInteger(i)||!services[i])return;
   $('#serviceKey').value=services[i].key;
-  refreshSheetControls();
+  renderSheetControls();
   setStatus(`Servicio activo: ${services[i].key}`);
 });
 
-$('#sheetSelect').addEventListener('change',function(){
-  const service=activeService();
-  if(service)service.sheetName=this.value;
-  refreshColumns();
-  $('#loadCodes').disabled=!$('#columnSelect').value;
-});
-$('#columnSelect').addEventListener('change',function(){
-  $('#loadCodes').disabled=!this.value;
+$('#sheetList').addEventListener('change',function(e){
+  const service=activeService(),si=Number(e.target.dataset.si);
+  if(!service?.sheetConfigs?.[si])return;
+  const cfg=service.sheetConfigs[si];
+  if(e.target.classList.contains('sheetCheck'))cfg.selected=e.target.checked;
+  if(e.target.classList.contains('sheetColumn'))cfg.column=e.target.value===''?null:Number(e.target.value);
+  updateSheetSummary();
 });
 $('#loadCodes').onclick=loadActiveCodes;
 
@@ -294,4 +289,4 @@ $('#clearHistory').onclick=()=>{records.length=0;currentCode='';lastAccepted='';
 window.addEventListener('beforeunload',stop);if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js');
 </script>
 </body>
-</html>
+</html>    
