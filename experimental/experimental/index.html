@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<title>Scanner Experimental v0.2.5</title>
+<title>Scanner Experimental v0.3.0</title>
 <style>
 :root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -32,7 +32,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.2.5</h1><small>Nativo · lectura de Excel · una hoja por servicio</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<header><div><h1>Scanner Experimental v0.3.0</h1><small>Nativo · índice completo del libro</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
 <main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
 <section class="controls">
   <div class="row">
@@ -48,16 +48,12 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
       placeholder="Clave: 362f7627cnsMX"
       autocomplete="off" autocapitalize="off" spellcheck="false" disabled>
   </div>
-  <div class="row">
-    <select id="sheetSelect" class="grow" disabled>
-      <option value="">Seleccionar hoja</option>
-    </select>
-    <select id="columnSelect" class="grow" disabled>
-      <option value="">Columna de códigos</option>
-    </select>
-    <button id="loadCodes" disabled>Cargar códigos</button>
+  <div class="meta" id="excelInfo">Carga uno o varios Excel. Se indexarán automáticamente todas sus hojas.</div>
+  <div id="ambiguity" class="result" hidden>
+    <strong>⚠ Código duplicado en la sesión</strong>
+    <div class="meta" id="ambiguityText"></div>
+    <div class="row" id="ambiguityButtons" style="margin-top:8px;flex-wrap:wrap"></div>
   </div>
-  <div class="meta" id="excelInfo">Ningún código cargado desde Excel.</div>
 
   <div class="row">
     <input id="manualCode" class="grow" type="text"
@@ -67,7 +63,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
   </div>
 
   <div class="row"><button id="torch" disabled>🔦 Linterna</button><div class="grow"><label>Zoom: <span id="zoomValue">1.0×</span></label><input id="zoom" type="range" min="1" max="1" step="0.1" value="1" disabled></div></div>
-  <div class="result"><strong id="value">Sin lectura</strong><div class="meta" id="meta">Ingresa la clave y apunta hacia un código.</div></div>
+  <div class="result"><strong id="value">Sin lectura</strong><div class="meta" id="meta">Carga los Excel y apunta hacia un código.</div></div>
   <div class="row"><button id="start" class="primary grow">Iniciar cámara</button><button id="sample" class="sample" disabled>📷 Muestra</button><button id="clearCurrent">Limpiar</button></div>
   <div class="history"><div class="historyHead"><strong>Histórico</strong><span id="count">0</span></div><div class="historyList" id="history"><div class="empty">Aún no hay lecturas.</div></div></div>
   <div class="row"><button id="clearHistory" class="grow">Vaciar histórico</button></div>
@@ -84,8 +80,6 @@ function serviceKey(){return $('#serviceKey').value.trim()}
 function beep(){try{const C=window.AudioContext||window.webkitAudioContext,c=new C(),o=c.createOscillator(),g=c.createGain();o.type='square';o.frequency.setValueAtTime(1250,c.currentTime);g.gain.setValueAtTime(.65,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.2);o.connect(g).connect(c.destination);o.start();o.stop(c.currentTime+.2);setTimeout(()=>c.close(),300)}catch(e){}}
 function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function render(){const h=$('#history');$('#count').textContent=records.length;if(!records.length){h.innerHTML='<div class="empty">Aún no hay lecturas.</div>';return}h.innerHTML=records.map((r,i)=>`<div class="item ${r.sample?'sampled':r.found===true?'found':r.found===false?'notfound':''}" data-i="${i}"><span class="camera">${r.sample?'📷':r.found===true?'✓':r.found===false?'!':''}</span><span class="code">${escapeHtml(r.code)}</span><span class="key">${escapeHtml(r.key)}</span></div>`).join('');h.scrollTop=0}
-function activeService(){const i=Number($('#serviceSelect').value);return Number.isInteger(i)?services[i]:null}
-function accept(code){if(!code)return;const key=serviceKey();if(!key){setStatus('Escribe primero la clave del servicio.');return}const normalized=normalizeCode(code);const now=Date.now();if(normalized===lastAccepted&&now-lastAt<1800)return;lastAccepted=normalized;lastAt=now;currentCode=normalized;const service=activeService();const hasBase=Boolean(service&&service.codes&&service.codes.size);const found=hasBase?service.codes.has(normalized):null;records.unshift({code:normalized,key,sample:false,found});$('#value').textContent=normalized;$('#meta').textContent=hasBase?(found?`Encontrado · ${key}`:`No encontrado · ${key}`):key;$('#sample').disabled=false;$('#sample').textContent='📷 Muestra';render();beep();$('#viewer').classList.remove('flash');void $('#viewer').offsetWidth;$('#viewer').classList.add('flash')}
 
 function normalizeCode(v){
   return String(v ?? '')
@@ -113,112 +107,153 @@ async function setupDetector(){if(!('BarcodeDetector' in window))throw new Error
 async function loop(){if(!running||!detector)return;try{const found=await detector.detect(capture());if(found?.length)accept(found[0].rawValue)}catch(e){}timer=setTimeout(loop,100)}
 function capabilities(){const c=track?.getCapabilities?.()||{},z=$('#zoom');if(c.zoom){z.min=c.zoom.min;z.max=c.zoom.max;z.step=c.zoom.step||.1;z.value=c.zoom.min;z.disabled=false;$('#zoomValue').textContent=Number(z.value).toFixed(1)+'×'}else z.disabled=true;$('#torch').disabled=!c.torch}
 async function stop(){running=false;clearTimeout(timer);if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;track=null;video.srcObject=null;$('#start').textContent='Iniciar cámara';badge.textContent='Detenido'}
-async function start(){if(!serviceKey()){setStatus('Escribe o carga primero la clave del servicio.');$('#serviceKey').focus();return}await stop();setStatus('Solicitando cámara trasera…');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});video.srcObject=stream;await video.play();track=stream.getVideoTracks()[0];const n=await setupDetector();running=true;capabilities();badge.textContent='Motor nativo';$('#start').textContent='Detener';setStatus(`${track.label||'Cámara trasera'} · ${n} formatos`);loop()}catch(e){running=false;badge.textContent='Error';setStatus('No se pudo iniciar: '+e.message)}}
+async function start(){if(!services.length){setStatus('Carga al menos un Excel antes de iniciar la cámara.');return}await stop();setStatus('Solicitando cámara trasera…');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});video.srcObject=stream;await video.play();track=stream.getVideoTracks()[0];const n=await setupDetector();running=true;capabilities();badge.textContent='Motor nativo';$('#start').textContent='Detener';setStatus(`${track.label||'Cámara trasera'} · ${n} formatos`);loop()}catch(e){running=false;badge.textContent='Error';setStatus('No se pudo iniciar: '+e.message)}}
 
 
-function columnName(index){
-  let name='';
-  for(let n=index+1;n>0;n=Math.floor((n-1)/26)){
-    name=String.fromCharCode(65+(n-1)%26)+name;
-  }
-  return name;
-}
-function sheetRows(service,sheetName){
-  if(!service?.workbook||!sheetName)return [];
-  return XLSX.utils.sheet_to_json(service.workbook.Sheets[sheetName],{
-    header:1,defval:'',raw:false,blankrows:false
-  });
-}
-function probableHeader(rows,column){
-  for(let r=0;r<Math.min(rows.length,12);r++){
-    const value=String(rows[r]?.[column]??'').trim();
-    if(value)return value.slice(0,24);
-  }
-  return 'sin encabezado';
-}
-function refreshSheetControls(){
-  const service=activeService();
-  const sheet=$('#sheetSelect'),column=$('#columnSelect'),button=$('#loadCodes');
-  sheet.innerHTML='<option value="">Seleccionar hoja</option>';
-  column.innerHTML='<option value="">Columna de códigos</option>';
-  sheet.disabled=true;column.disabled=true;button.disabled=true;
-  if(!service?.workbook){
-    $('#excelInfo').textContent=service?'El archivo no pudo leerse.':'Ningún código cargado desde Excel.';
-    return;
-  }
-  for(const name of service.workbook.SheetNames){
-    const option=document.createElement('option');
-    option.value=name;option.textContent=name;sheet.appendChild(option);
-  }
-  sheet.disabled=false;
-  if(service.sheetName&&service.workbook.SheetNames.includes(service.sheetName)){
-    sheet.value=service.sheetName;
-    refreshColumns();
-  }
-  $('#excelInfo').textContent=service.codes?.size
-    ? `${service.codes.size} códigos cargados · ${service.sheetName||''} · columna ${columnName(service.columnIndex||0)}`
-    : 'Selecciona una hoja y la columna que contiene los códigos.';
-}
-function refreshColumns(){
-  const service=activeService(),sheetName=$('#sheetSelect').value;
-  const column=$('#columnSelect'),button=$('#loadCodes');
-  column.innerHTML='<option value="">Columna de códigos</option>';
-  column.disabled=true;button.disabled=true;
-  if(!service||!sheetName)return;
-  const rows=sheetRows(service,sheetName);
-  const maxCols=Math.max(0,...rows.slice(0,80).map(row=>row.length));
-  for(let c=0;c<maxCols;c++){
-    const option=document.createElement('option');
-    option.value=String(c);
-    option.textContent=`${columnName(c)} · ${probableHeader(rows,c)}`;
-    column.appendChild(option);
-  }
-  column.disabled=maxCols===0;
-  if(Number.isInteger(service.columnIndex)&&service.sheetName===sheetName){
-    column.value=String(service.columnIndex);
-  }
-  button.disabled=!column.value;
-}
-function looksLikeCode(value){
-  const code=normalizeCode(value);
-  if(code.length<3||code.length>50||!/\d/.test(code))return false;
-  return !/^(TOTAL|TOTALES|CODIGO|CODIGOS|CODE|PAQUETE|PAQUETES|PACKAGE|BUNDLE|ETIQUETA|LABEL|ID)$/.test(code);
-}
-function loadActiveCodes(){
-  const service=activeService();
-  const sheetName=$('#sheetSelect').value;
-  const columnIndex=Number($('#columnSelect').value);
-  if(!service||!sheetName||!Number.isInteger(columnIndex)){
-    setStatus('Selecciona una hoja y una columna.');
-    return;
-  }
-  const rows=sheetRows(service,sheetName);
+let globalIndex=new Map(),pendingCode='',pendingMatches=[];
+
+function indexWorkbook(workbook){
   const codes=new Set();
-  for(const row of rows){
-    const raw=row?.[columnIndex];
-    if(looksLikeCode(raw))codes.add(normalizeCode(raw));
+  for(const sheetName of workbook.SheetNames){
+    const sheet=workbook.Sheets[sheetName];
+    const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:'',raw:false,blankrows:false});
+    for(const row of rows){
+      if(!Array.isArray(row))continue;
+      for(const cell of row){
+        const code=normalizeCode(cell);
+        if(code)codes.add(code);
+      }
+    }
   }
-  service.sheetName=sheetName;
-  service.columnIndex=columnIndex;
-  service.codes=codes;
-  $('#excelInfo').textContent=`${codes.size} códigos cargados · ${sheetName} · columna ${columnName(columnIndex)}`;
-  setStatus(codes.size?`${codes.size} códigos listos para verificar.`:'No se detectaron códigos válidos en esa columna.');
+  return codes;
+}
+
+function rebuildGlobalIndex(){
+  globalIndex=new Map();
+  services.forEach((service,serviceIndex)=>{
+    for(const code of service.codes){
+      if(!globalIndex.has(code))globalIndex.set(code,new Set());
+      globalIndex.get(code).add(serviceIndex);
+    }
+  });
+  const ambiguous=[...globalIndex.values()].filter(set=>set.size>1).length;
+  const totalValues=globalIndex.size;
+  $('#excelInfo').textContent=services.length
+    ? `${services.length} servicio(s) · ${totalValues} valores únicos indexados${ambiguous?` · ${ambiguous} valores presentes en más de un Excel`:''}.`
+    : 'Carga uno o varios Excel. Se indexarán automáticamente todas sus hojas.';
 }
 
 function renderServiceSelect(){
   const select=$('#serviceSelect');
   if(!services.length){
     select.innerHTML='<option value="">Sin servicios cargados</option>';
-    select.disabled=true;$('#serviceKey').value='';$('#serviceKey').disabled=true;
-    $('#fileCount').textContent='0 archivos';refreshSheetControls();return;
+    select.disabled=true;
+    $('#serviceKey').value='';
+    $('#serviceKey').disabled=true;
+    $('#fileCount').textContent='0 archivos';
+    rebuildGlobalIndex();
+    return;
   }
+  const previous=Number(select.value);
   select.innerHTML=services.map((s,i)=>`<option value="${i}">${escapeHtml(s.fileName)}</option>`).join('');
-  select.disabled=false;$('#serviceKey').disabled=false;
-  select.value=String(services.length-1);
-  $('#serviceKey').value=services[services.length-1].key;
+  select.disabled=false;
+  $('#serviceKey').disabled=false;
+  const target=Number.isInteger(previous)&&services[previous]?previous:services.length-1;
+  select.value=String(target);
+  $('#serviceKey').value=services[target].key;
   $('#fileCount').textContent=`${services.length} archivo${services.length===1?'':'s'}`;
-  refreshSheetControls();
+  rebuildGlobalIndex();
 }
+
+function clearAmbiguity(){
+  pendingCode='';
+  pendingMatches=[];
+  $('#ambiguity').hidden=true;
+  $('#ambiguityText').textContent='';
+  $('#ambiguityButtons').innerHTML='';
+}
+
+function addResolvedRecord(code,serviceIndex,found=true){
+  const service=services[serviceIndex];
+  const key=service?service.key:'NO ENCONTRADO';
+  currentCode=code;
+  records.unshift({code,key,sample:false,found});
+  $('#value').textContent=code;
+  $('#meta').textContent=found?`Encontrado · ${key}`:'No encontrado en la sesión';
+  $('#sample').disabled=false;
+  $('#sample').textContent='📷 Muestra';
+  render();
+  beep();
+  $('#viewer').classList.remove('flash');
+  void $('#viewer').offsetWidth;
+  $('#viewer').classList.add('flash');
+}
+
+function resolveAmbiguity(serviceIndex){
+  if(!pendingCode||!services[serviceIndex])return;
+  const code=pendingCode;
+  clearAmbiguity();
+  addResolvedRecord(code,serviceIndex,true);
+  setStatus(`Código asociado a ${services[serviceIndex].key}.`);
+}
+
+function accept(code){
+  if(!code)return;
+  if(!services.length){
+    setStatus('Carga al menos un Excel antes de verificar.');
+    return;
+  }
+  const normalized=normalizeCode(code);
+  if(!normalized)return;
+  const now=Date.now();
+  if(normalized===lastAccepted&&now-lastAt<1800)return;
+  lastAccepted=normalized;
+  lastAt=now;
+
+  const matchSet=globalIndex.get(normalized);
+  const matches=matchSet?[...matchSet]:[];
+
+  if(matches.length===0){
+    clearAmbiguity();
+    currentCode=normalized;
+    records.unshift({code:normalized,key:'NO ENCONTRADO',sample:false,found:false});
+    $('#value').textContent=normalized;
+    $('#meta').textContent='No encontrado en ningún Excel de la sesión';
+    $('#sample').disabled=false;
+    $('#sample').textContent='📷 Muestra';
+    render();
+    beep();
+    $('#viewer').classList.remove('flash');
+    void $('#viewer').offsetWidth;
+    $('#viewer').classList.add('flash');
+    return;
+  }
+
+  if(matches.length===1){
+    clearAmbiguity();
+    addResolvedRecord(normalized,matches[0],true);
+    return;
+  }
+
+  currentCode='';
+  pendingCode=normalized;
+  pendingMatches=matches;
+  $('#value').textContent=normalized;
+  $('#meta').textContent=`Encontrado en ${matches.length} inspecciones`;
+  $('#sample').disabled=true;
+  $('#ambiguity').hidden=false;
+  $('#ambiguityText').textContent=`${normalized} aparece en: ${matches.map(i=>services[i].key).join(' · ')}`;
+  $('#ambiguityButtons').innerHTML=matches.map(i=>`<button type="button" data-service-index="${i}">${escapeHtml(services[i].key)}</button>`).join('');
+  setStatus('Selecciona la inspección correcta para registrar la lectura.');
+  beep();
+}
+
+$('#ambiguityButtons').addEventListener('click',e=>{
+  const btn=e.target.closest('button[data-service-index]');
+  if(!btn)return;
+  resolveAmbiguity(Number(btn.dataset.serviceIndex));
+});
+
 $('#excelFiles').addEventListener('change',async function(){
   const selected=Array.from(this.files||[]);
   if(!selected.length){
@@ -234,13 +269,12 @@ $('#excelFiles').addEventListener('change',async function(){
     try{
       const buffer=await file.arrayBuffer();
       const workbook=XLSX.read(buffer,{type:'array',cellDates:false});
+      const codes=indexWorkbook(workbook);
       services.push({
         fileName:file.name,
         key:file.name.replace(/\.[^.]+$/,''),
         workbook,
-        sheetName:'',
-        columnIndex:null,
-        codes:new Set()
+        codes
       });
       loaded++;
     }catch(error){
@@ -249,31 +283,23 @@ $('#excelFiles').addEventListener('change',async function(){
     }
   }
   renderServiceSelect();
-  setStatus(`${loaded} archivo(s) leídos. Selecciona hoja y columna.`);
+  setStatus(`${loaded} archivo(s) indexado(s). Ya puedes verificar códigos.`);
   this.value='';
 });
+
 $('#serviceSelect').addEventListener('change',function(){
   const i=Number(this.value);
   if(!Number.isInteger(i)||!services[i])return;
   $('#serviceKey').value=services[i].key;
-  refreshSheetControls();
-  setStatus(`Servicio activo: ${services[i].key}`);
+  setStatus(`Servicio seleccionado para editar clave: ${services[i].key}`);
 });
-
-$('#sheetSelect').addEventListener('change',function(){
-  const service=activeService();
-  if(service)service.sheetName=this.value;
-  refreshColumns();
-  $('#loadCodes').disabled=!$('#columnSelect').value;
-});
-$('#columnSelect').addEventListener('change',function(){
-  $('#loadCodes').disabled=!this.value;
-});
-$('#loadCodes').onclick=loadActiveCodes;
 
 $('#serviceKey').addEventListener('input',function(){
   const i=Number($('#serviceSelect').value);
-  if(Number.isInteger(i)&&services[i])services[i].key=this.value;
+  if(Number.isInteger(i)&&services[i]){
+    services[i].key=this.value.trim();
+    rebuildGlobalIndex();
+  }
 });
 
 
@@ -288,9 +314,9 @@ $('#manualCode').addEventListener('keydown',e=>{
 $('#start').onclick=()=>running?stop():start();
 $('#torch').onclick=async()=>{if(!track)return;torchOn=!torchOn;try{await track.applyConstraints({advanced:[{torch:torchOn}]});$('#torch').classList.toggle('active',torchOn)}catch(e){setStatus('Linterna no disponible')}};
 $('#zoom').oninput=async e=>{const v=Number(e.target.value);$('#zoomValue').textContent=v.toFixed(1)+'×';try{await track.applyConstraints({advanced:[{zoom:v}]})}catch(e){}};
-$('#sample').onclick=()=>{const r=records.find(x=>x.code===currentCode&&x.key===serviceKey());if(!r)return;r.sample=!r.sample;render();$('#sample').textContent=r.sample?'✓ Muestra':'📷 Muestra';setStatus(r.sample?'Código marcado como muestra.':'Marca de muestra retirada.')};
-$('#clearCurrent').onclick=()=>{currentCode='';lastAccepted='';$('#value').textContent='Sin lectura';$('#meta').textContent='Ingresa la clave y apunta hacia un código.';$('#sample').disabled=true;$('#sample').textContent='📷 Muestra'};
-$('#clearHistory').onclick=()=>{records.length=0;currentCode='';lastAccepted='';render();$('#value').textContent='Sin lectura';$('#meta').textContent='Ingresa la clave y apunta hacia un código.';$('#sample').disabled=true;$('#sample').textContent='📷 Muestra';setStatus('Histórico vaciado.')};
+$('#sample').onclick=()=>{const r=records.find(x=>x.code===currentCode);if(!r)return;r.sample=!r.sample;render();$('#sample').textContent=r.sample?'✓ Muestra':'📷 Muestra';setStatus(r.sample?'Código marcado como muestra.':'Marca de muestra retirada.')};
+$('#clearCurrent').onclick=()=>{currentCode='';lastAccepted='';clearAmbiguity();$('#value').textContent='Sin lectura';$('#meta').textContent='Carga los Excel y apunta hacia un código.';$('#sample').disabled=true;$('#sample').textContent='📷 Muestra'};
+$('#clearHistory').onclick=()=>{records.length=0;currentCode='';lastAccepted='';clearAmbiguity();render();$('#value').textContent='Sin lectura';$('#meta').textContent='Carga los Excel y apunta hacia un código.';$('#sample').disabled=true;$('#sample').textContent='📷 Muestra';setStatus('Histórico vaciado.')};
 window.addEventListener('beforeunload',stop);if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js');
 </script>
 </body>
