@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<title>Scanner Experimental v0.3.2</title>
+<title>Scanner Experimental v0.3.3</title>
 <style>
 :root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -32,6 +32,11 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 .photoModal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;padding:16px}.photoModal.open{display:flex}.photoModal img{max-width:96vw;max-height:88vh;border-radius:12px}.photoModal button{position:absolute;top:18px;right:18px;background:#183e5d}
 .flash{animation:flash .35s}@keyframes flash{50%{box-shadow:inset 0 0 0 6px var(--ok)}}@media(min-width:800px){.app{max-width:720px;margin:auto;border-inline:1px solid #244761}}
 
+.sessionSummary{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.summaryCard{border:1px solid var(--line);border-radius:11px;background:#0d263b;padding:9px 10px;text-align:center}
+.summaryCard strong{display:block;font-size:20px;line-height:1.1}
+.summaryCard span{display:block;margin-top:3px;font-size:11px;color:var(--muted)}
+.removeExcel{background:#653838}
 @media(max-width:799px){
   html,body{height:auto;min-height:100%}
   body{overflow:auto}
@@ -45,7 +50,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.3.2</h1><small>Nativo · índice completo del libro</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<header><div><h1>Scanner Experimental v0.3.3</h1><small>Nativo · índice completo del libro</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
 <main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
 <section class="controls">
   <div class="row">
@@ -62,6 +67,10 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
       autocomplete="off" autocapitalize="off" spellcheck="false" disabled>
   </div>
   <div class="meta" id="excelInfo">Carga uno o varios Excel. Se indexarán automáticamente todas sus hojas.</div>
+  <div class="sessionSummary">
+    <div class="summaryCard"><strong id="activeServices">0</strong><span>Excel activos</span></div>
+    <div class="summaryCard"><strong id="uniqueVerified">0</strong><span>Códigos únicos verificados</span></div>
+  </div>
   <div id="ambiguity" class="result" hidden>
     <strong>⚠ Código duplicado en la sesión</strong>
     <div class="meta" id="ambiguityText"></div>
@@ -77,7 +86,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 
   <div class="row"><button id="torch" disabled>🔦 Linterna</button><div class="grow"><label>Zoom: <span id="zoomValue">1.0×</span></label><input id="zoom" type="range" min="1" max="1" step="0.1" value="1" disabled></div></div>
   <div class="result"><strong id="value">Sin lectura</strong><div class="meta" id="meta">Carga los Excel y apunta hacia un código.</div></div>
-  <div class="row"><button id="start" class="primary grow">Iniciar cámara</button><button id="sample" class="sample" disabled>📷 Muestra</button><button id="clearCurrent">Limpiar</button></div>
+  <div class="row"><button id="start" class="primary grow">Iniciar cámara</button><button id="sample" class="sample" disabled>📷 Muestra</button><button id="removeExcel" class="removeExcel" disabled>Quitar Excel</button></div>
   <div class="history"><div class="historyHead"><strong>Histórico</strong><span id="count">0</span></div><div class="historyList" id="history"><div class="empty">Aún no hay lecturas.</div></div></div>
   <div class="row"><button id="clearHistory" class="grow">Vaciar histórico</button></div>
   <div class="status" id="status">La cámara requiere HTTPS o GitHub Pages.</div>
@@ -92,15 +101,23 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 const $=s=>document.querySelector(s),video=$('#video'),statusEl=$('#status'),badge=$('#engineBadge');
 let stream=null,track=null,running=false,torchOn=false,detector=null,timer=0,lastAccepted='',lastAt=0,currentCode='',currentRecordId=null,resumeAfterPhoto=false;
 let services=[];
+function newServiceId(){return (crypto.randomUUID?.()||`svc-${Date.now()}-${Math.random().toString(16).slice(2)}`)}
 const records=[],formats=['code_128','code_39','code_93','codabar','ean_13','ean_8','itf','upc_a','upc_e'];
 function setStatus(t){statusEl.textContent=t}
 function serviceKey(){return $('#serviceKey').value.trim()}
+function selectedServiceIndex(){const i=Number($('#serviceSelect').value);return Number.isInteger(i)&&services[i]?i:-1}
+function updateSummary(){
+  $('#activeServices').textContent=services.length;
+  const unique=new Set(records.filter(r=>r.found===true).map(r=>normalizeCode(r.code)).filter(Boolean));
+  $('#uniqueVerified').textContent=unique.size;
+  $('#removeExcel').disabled=services.length===0;
+}
 function beep(){try{const C=window.AudioContext||window.webkitAudioContext,c=new C(),o=c.createOscillator(),g=c.createGain();o.type='square';o.frequency.setValueAtTime(2400,c.currentTime);g.gain.setValueAtTime(.78,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.16);o.connect(g).connect(c.destination);o.start();o.stop(c.currentTime+.16);setTimeout(()=>c.close(),240)}catch(e){}}
 function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function render(){
   const h=$('#history');
   $('#count').textContent=records.length;
-  if(!records.length){h.innerHTML='<div class="empty">Aún no hay lecturas.</div>';return}
+  if(!records.length){h.innerHTML='<div class="empty">Aún no hay lecturas.</div>';updateSummary();return}
   h.innerHTML=records.map(r=>{
     const state=r.sample?'📷 MUESTRA':r.found===true?'✓ Coincidencia':r.found===false?'✕ No encontrado':'';
     const thumb=r.photo?`<img class="thumb" src="${r.photo}" alt="Muestra ${escapeHtml(r.code)}" data-photo-id="${r.id}">`:'';
@@ -114,6 +131,7 @@ function render(){
     </div>`;
   }).join('');
   h.scrollTop=0;
+  updateSummary();
 }
 
 function normalizeCode(v){
@@ -190,7 +208,7 @@ function renderServiceSelect(){
     return;
   }
   const previous=Number(select.value);
-  select.innerHTML=services.map((s,i)=>`<option value="${i}">${escapeHtml(s.fileName)}</option>`).join('');
+  select.innerHTML=services.map((s,i)=>`<option value="${i}">${escapeHtml(s.key||s.fileName)}${s.key?` · ${escapeHtml(s.fileName)}`:''}</option>`).join('');
   select.disabled=false;
   $('#serviceKey').disabled=false;
   const target=Number.isInteger(previous)&&services[previous]?previous:services.length-1;
@@ -198,6 +216,7 @@ function renderServiceSelect(){
   $('#serviceKey').value=services[target].key;
   $('#fileCount').textContent=`${services.length} archivo${services.length===1?'':'s'}`;
   rebuildGlobalIndex();
+  updateSummary();
 }
 
 function clearAmbiguity(){
@@ -214,7 +233,7 @@ function addResolvedRecord(code,serviceIndex,found=true){
   const service=services[serviceIndex];
   const key=service?service.key:'NO ENCONTRADO';
   currentCode=code;
-  const rec={id:newRecordId(),code,key,sample:false,found,photo:null};
+  const rec={id:newRecordId(),code,key,serviceId:service?.serviceId||null,sample:false,found,photo:null};
   records.unshift(rec);
   currentRecordId=rec.id;
   $('#value').textContent=code;
@@ -256,7 +275,7 @@ function accept(code){
   if(matches.length===0){
     clearAmbiguity();
     currentCode=normalized;
-    const rec={id:newRecordId(),code:normalized,key:'NO ENCONTRADO',sample:false,found:false,photo:null};
+    const rec={id:newRecordId(),code:normalized,key:'NO ENCONTRADO',serviceId:null,sample:false,found:false,photo:null};
     records.unshift(rec);
     currentRecordId=rec.id;
     $('#value').textContent=normalized;
@@ -299,6 +318,26 @@ $('#ambiguityButtons').addEventListener('click',e=>{
 });
 
 
+
+function removeSelectedExcel(){
+  const i=selectedServiceIndex();
+  if(i<0)return;
+  const removed=services[i];
+  services.splice(i,1);
+  clearAmbiguity();
+  currentCode='';
+  currentRecordId=null;
+  lastAccepted='';
+  renderServiceSelect();
+  render();
+  $('#value').textContent='Excel retirado';
+  $('#meta').textContent=(removed?.key||removed?.fileName||'Excel')+' fue retirado de la sesión activa.';
+  $('#sample').disabled=true;
+  $('#sample').textContent='📷 Muestra';
+  setStatus('Excel retirado. El histórico se conserva.');
+  saveSessionNow();
+}
+
 async function imageFileToThumbnail(file){
   const dataUrl=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});
   const img=await new Promise((resolve,reject)=>{const im=new Image();im.onload=()=>resolve(im);im.onerror=reject;im.src=dataUrl;});
@@ -320,6 +359,7 @@ function serializableState(includePhotos=true){
     version:1,
     savedAt:Date.now(),
     services:services.map(s=>({
+      serviceId:s.serviceId||newServiceId(),
       fileName:s.fileName,
       key:s.key,
       codes:[...(s.codes||[])]
@@ -328,6 +368,7 @@ function serializableState(includePhotos=true){
       id:r.id,
       code:r.code,
       key:r.key,
+      serviceId:r.serviceId||null,
       sample:Boolean(r.sample),
       found:r.found,
       photo:includePhotos?(r.photo||null):null
@@ -365,6 +406,7 @@ function restoreSession(){
     if(!state||!Array.isArray(state.services)||!Array.isArray(state.records))return false;
 
     services=state.services.map(s=>({
+      serviceId:s.serviceId||newServiceId(),
       fileName:s.fileName||'Excel restaurado',
       key:s.key||'',
       workbook:null,
@@ -377,6 +419,7 @@ function restoreSession(){
         id:r.id||newRecordId(),
         code:r.code||'',
         key:r.key||'',
+        serviceId:r.serviceId||null,
         sample:Boolean(r.sample),
         found:r.found,
         photo:r.photo||null
@@ -385,6 +428,7 @@ function restoreSession(){
 
     renderServiceSelect();
     render();
+    updateSummary();
     currentCode='';
     currentRecordId=null;
     $('#value').textContent='Sesión restaurada';
@@ -440,11 +484,14 @@ $('#serviceSelect').addEventListener('change',function(){
 
 $('#serviceKey').addEventListener('input',function(){
   const i=Number($('#serviceSelect').value);
-  if(Number.isInteger(i)&&services[i]){
-    services[i].key=this.value.trim();
-    rebuildGlobalIndex();
-    scheduleSave();
-  }
+  if(!Number.isInteger(i)||!services[i])return;
+  const service=services[i];
+  service.key=this.value.trim();
+  for(const r of records){if(r.serviceId===service.serviceId)r.key=service.key}
+  const opt=$('#serviceSelect').options[i];
+  if(opt)opt.textContent=(service.key?service.key+' · ':'')+service.fileName;
+  render();
+  scheduleSave();
 });
 
 
@@ -482,8 +529,8 @@ $('#samplePhotoInput').addEventListener('change',async function(){
 $('#history').addEventListener('click',e=>{const img=e.target.closest('[data-photo-id]');if(!img)return;const r=records.find(x=>x.id===img.dataset.photoId);if(r?.photo)openPhoto(r.photo)});
 $('#closePhotoModal').onclick=closePhoto;
 $('#photoModal').addEventListener('click',e=>{if(e.target.id==='photoModal')closePhoto()});
-$('#clearCurrent').onclick=()=>{currentCode='';currentRecordId=null;lastAccepted='';clearAmbiguity();$('#value').textContent='Sin lectura';$('#meta').textContent='Carga los Excel y apunta hacia un código.';$('#sample').disabled=true;$('#sample').textContent='📷 Muestra'};
-$('#clearHistory').onclick=()=>{records.length=0;currentCode='';currentRecordId=null;lastAccepted='';clearAmbiguity();render();$('#value').textContent='Sin lectura';$('#meta').textContent='Carga los Excel y apunta hacia un código.';$('#sample').disabled=true;$('#sample').textContent='📷 Muestra';setStatus('Histórico vaciado.');scheduleSave()};
+$('#removeExcel').onclick=removeSelectedExcel;
+$('#clearHistory').onclick=()=>{records.length=0;currentCode='';currentRecordId=null;lastAccepted='';clearAmbiguity();render();$('#value').textContent='Sin lectura';$('#meta').textContent='Carga los Excel y apunta hacia un código.';$('#sample').disabled=true;$('#sample').textContent='📷 Muestra';setStatus('Histórico vaciado.');updateSummary();scheduleSave()};
 window.addEventListener('pagehide',()=>{saveSessionNow();stop()});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveSessionNow()});
 window.addEventListener('beforeunload',saveSessionNow);
