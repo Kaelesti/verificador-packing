@@ -1,1 +1,326 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#102a43">
+<link rel="manifest" href="manifest.webmanifest">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<title>Scanner Experimental v0.3.4-beta1</title>
+<style>
+:root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+body{overflow:hidden}.app{height:100%;display:grid;grid-template-rows:auto minmax(210px,1fr) auto}
+header{padding:10px 14px;background:linear-gradient(180deg,#102a43,#0b2135);display:flex;align-items:center;justify-content:space-between;gap:10px}
+header h1{font-size:17px;margin:0}header small{display:block;color:var(--muted)}.badge{font-size:12px;padding:5px 8px;border-radius:999px;background:#183e5d;color:var(--muted);white-space:nowrap}
+.viewer{position:relative;background:#000;min-height:0;overflow:hidden}video{width:100%;height:100%;object-fit:cover;background:#000}
+.overlay{position:absolute;inset:0;pointer-events:none}.scanbox{position:absolute;left:7%;right:7%;height:23%;top:50%;transform:translateY(-50%);border:2px solid #fff;border-radius:14px;box-shadow:0 0 18px rgba(255,255,255,.15)}
+.scanline{position:absolute;left:5%;right:5%;top:50%;height:2px;background:linear-gradient(90deg,transparent,var(--ok),transparent);box-shadow:0 0 8px var(--ok);animation:sweep 1.4s ease-in-out infinite alternate}
+@keyframes sweep{from{transform:translateY(-38px)}to{transform:translateY(38px)}}
+.controls{background:var(--panel2);padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:grid;gap:8px;max-height:52vh;overflow:auto}
+.row{display:flex;gap:7px;align-items:center}.grow{flex:1;min-width:0}button,input{font:inherit}
+button{border:0;border-radius:11px;background:#183e5d;color:white;padding:10px 12px;font-weight:650}button.primary{background:#1a73e8}button.sample{background:#7a651f}button.active{outline:2px solid #d8edff;background:#245777}button:disabled{opacity:.45}
+input[type=text],select{width:100%;background:#132f49;color:white;border:1px solid #345a75;border-radius:9px;padding:10px}input[type=file]{display:none}input[type=range]{width:100%}
+label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center;border-radius:11px;background:#183e5d;color:white;padding:10px 12px;font-weight:650}
+.result{border:1px solid var(--line);border-radius:12px;padding:9px 10px;background:#0d263b;min-height:58px}.result strong{display:block;font-size:17px;word-break:break-all}.meta,.status{font-size:12px;color:var(--muted);margin-top:4px}
+.history{border:1px solid var(--line);border-radius:12px;background:#0d263b;overflow:hidden}.historyHead{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
+.historyList{max-height:260px;overflow:auto}.empty{padding:12px;color:var(--muted);font-size:13px;text-align:center}
+.item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;align-items:center;padding:11px 12px;border-bottom:1px solid rgba(49,86,111,.6);font-variant-numeric:tabular-nums;min-height:66px}.item:last-child{border-bottom:0}
+.item.sampled{background:rgba(255,207,92,.14);box-shadow:inset 4px 0 0 var(--sample)}.item.found{box-shadow:inset 4px 0 0 var(--ok)}.item.notfound{box-shadow:inset 4px 0 0 var(--bad)}
+.itemMain{min-width:0}.code{display:block;font-size:21px;line-height:1.05;font-weight:850;letter-spacing:.2px;word-break:break-all}.key{display:block;margin-top:5px;color:#e7f1f8;font-size:14px;font-weight:750;word-break:break-word}
+.itemState{margin-top:4px;color:var(--muted);font-size:11px;font-weight:650}.thumb{width:62px;height:62px;border-radius:9px;object-fit:cover;border:2px solid rgba(255,255,255,.8);background:#08131c}.sampleMark{color:var(--sample)}
+.photoModal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;padding:16px}.photoModal.open{display:flex}.photoModal img{max-width:96vw;max-height:88vh;border-radius:12px}.photoModal button{position:absolute;top:18px;right:18px;background:#183e5d}
+.flash{animation:flash .35s}@keyframes flash{50%{box-shadow:inset 0 0 0 6px var(--ok)}}@media(min-width:800px){.app{max-width:720px;margin:auto;border-inline:1px solid #244761}}
 
+.sessionSummary{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.summaryCard{border:1px solid var(--line);border-radius:11px;background:#0d263b;padding:9px 10px;text-align:center}
+.summaryCard strong{display:block;font-size:20px;line-height:1.1}
+.summaryCard span{display:block;margin-top:3px;font-size:11px;color:var(--muted)}
+.removeExcel{background:#653838}
+.prepackBar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.prepackCard{border:1px solid var(--line);border-radius:11px;background:#0d263b;padding:8px 6px;text-align:center}
+.prepackCard strong{display:block;font-size:19px}.prepackCard span{display:block;margin-top:2px;font-size:10px;color:var(--muted)}
+.filterBtn{padding:8px 10px;font-size:12px}.exportRow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px}.prepackToggle{background:#365b42}.prepackToggle.active{background:#18794e;outline:2px solid #d8edff}
+@media(max-width:799px){
+  html,body{height:auto;min-height:100%}
+  body{overflow:auto}
+  .app{height:auto;min-height:100vh;display:block}
+  .viewer{height:43vh;min-height:260px}
+  .controls{max-height:none;overflow:visible}
+  .historyList{max-height:none}
+}
+
+</style>
+</head>
+<body>
+<div class="app">
+<header><div><h1>Scanner Experimental v0.3.4-beta1</h1><small>Nativo · índice completo · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
+<section class="controls">
+  <div class="row">
+    <label class="fileBtn grow" for="excelFiles">Agregar Excel</label>
+    <input id="excelFiles" type="file" accept=".xlsx,.xls,.xlsm" multiple>
+    <span id="fileCount" class="meta">0 archivos</span>
+  </div>
+  <div class="row">
+    <select id="serviceSelect" class="grow" disabled>
+      <option value="">Sin servicios cargados</option>
+    </select>
+    <input id="serviceKey" class="grow" type="text"
+      placeholder="Clave: 362f7627cnsMX"
+      autocomplete="off" autocapitalize="off" spellcheck="false" disabled>
+  </div>
+  <div class="meta" id="excelInfo">Carga uno o varios Excel. Se indexarán automáticamente todas sus hojas.</div>
+  <div class="sessionSummary">
+    <div class="summaryCard"><strong id="activeServices">0</strong><span>Excel activos</span></div>
+    <div class="summaryCard"><strong id="uniqueVerified">0</strong><span>Códigos únicos verificados</span></div>
+  </div>
+  <div class="row"><button id="prepackMode" class="prepackToggle grow">Prepacking: DESACTIVADO</button></div>
+  <div class="prepackBar">
+    <div class="prepackCard"><strong id="ppTotal">0</strong><span>Físicos únicos</span></div>
+    <div class="prepackCard"><strong id="ppFound">0</strong><span>Coincidentes</span></div>
+    <div class="prepackCard"><strong id="ppNotFound">0</strong><span>No coincidentes</span></div>
+  </div>
+  <div class="row" id="filterRow">
+    <button class="filterBtn active grow" data-filter="all">Todos</button>
+    <button class="filterBtn grow" data-filter="found">Coincidentes</button>
+    <button class="filterBtn grow" data-filter="notfound">No coincidentes</button>
+  </div>
+  <div class="exportRow">
+    <select id="exportFormat">
+      <option value="twoSheets">2 hojas: Coincidentes / No coincidentes</option>
+      <option value="conditionColumn">1 hoja: Código + Condición</option>
+      <option value="twoColumns">1 hoja: dos columnas</option>
+    </select>
+    <button id="exportPrepacking" disabled>⬇ Excel</button>
+  </div>
+  <div id="ambiguity" class="result" hidden>
+    <strong>⚠ Código duplicado en la sesión</strong>
+    <div class="meta" id="ambiguityText"></div>
+    <div class="row" id="ambiguityButtons" style="margin-top:8px;flex-wrap:wrap"></div>
+  </div>
+
+  <div class="row">
+    <input id="manualCode" class="grow" type="text"
+      placeholder="Escribir o pegar código"
+      autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <button id="verifyManual" class="primary">Verificar</button>
+  </div>
+
+  <div class="row"><button id="torch" disabled>🔦 Linterna</button><div class="grow"><label>Zoom: <span id="zoomValue">1.0×</span></label><input id="zoom" type="range" min="1" max="1" step="0.1" value="1" disabled></div></div>
+  <div class="result"><strong id="value">Sin lectura</strong><div class="meta" id="meta">Carga los Excel y apunta hacia un código.</div></div>
+  <div class="row"><button id="start" class="primary grow">Iniciar cámara</button><button id="sample" class="sample" disabled>📷 Muestra</button><button id="removeExcel" class="removeExcel" disabled>Quitar Excel</button></div>
+  <div class="history"><div class="historyHead"><strong>Histórico</strong><span id="count">0</span></div><div class="historyList" id="history"><div class="empty">Aún no hay lecturas.</div></div></div>
+  <div class="row"><button id="clearHistory" class="grow">Vaciar histórico</button></div>
+  <div class="status" id="status">La cámara requiere HTTPS o GitHub Pages.</div>
+</section>
+</div>
+<input id="samplePhotoInput" type="file" accept="image/*" capture="environment" hidden>
+<div id="photoModal" class="photoModal" aria-hidden="true">
+  <button id="closePhotoModal" type="button">Cerrar</button>
+  <img id="photoModalImg" alt="Fotografía de muestra">
+</div>
+<script>
+const $=s=>document.querySelector(s),video=$('#video'),statusEl=$('#status'),badge=$('#engineBadge');
+let stream=null,track=null,running=false,torchOn=false,detector=null,timer=0,lastAccepted='',lastAt=0,currentCode='',currentRecordId=null,resumeAfterPhoto=false;
+let prepackMode=false,historyFilter='all';
+let services=[];
+function newServiceId(){return (crypto.randomUUID?.()||`svc-${Date.now()}-${Math.random().toString(16).slice(2)}`)}
+const records=[],formats=['code_128','code_39','code_93','codabar','ean_13','ean_8','itf','upc_a','upc_e'];
+function setStatus(t){statusEl.textContent=t}
+function serviceKey(){return $('#serviceKey').value.trim()}
+function selectedServiceIndex(){const i=Number($('#serviceSelect').value);return Number.isInteger(i)&&services[i]?i:-1}
+function uniquePhysicalRecords(){
+  const seen=new Map();
+  for(const r of records){
+    const code=normalizeCode(r.code);
+    if(code&&!seen.has(code))seen.set(code,r);
+  }
+  return [...seen.values()];
+}
+function updateSummary(){
+  $('#activeServices').textContent=services.length;
+  const uniqueFound=new Set(records.filter(r=>r.found===true).map(r=>normalizeCode(r.code)).filter(Boolean));
+  $('#uniqueVerified').textContent=uniqueFound.size;
+  $('#removeExcel').disabled=services.length===0;
+  const phys=uniquePhysicalRecords();
+  const found=phys.filter(r=>r.found===true).length;
+  const notfound=phys.filter(r=>r.found===false).length;
+  $('#ppTotal').textContent=phys.length;
+  $('#ppFound').textContent=found;
+  $('#ppNotFound').textContent=notfound;
+  $('#exportPrepacking').disabled=phys.length===0;
+}
+function beep(){try{const C=window.AudioContext||window.webkitAudioContext,c=new C(),o=c.createOscillator(),g=c.createGain();o.type='square';o.frequency.setValueAtTime(2400,c.currentTime);g.gain.setValueAtTime(.78,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.16);o.connect(g).connect(c.destination);o.start();o.stop(c.currentTime+.16);setTimeout(()=>c.close(),240)}catch(e){}}
+function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+function render(){
+  const h=$('#history');
+  $('#count').textContent=records.length;
+  if(!records.length){h.innerHTML='<div class="empty">Aún no hay lecturas.</div>';updateSummary();return}
+  const shown=records.filter(r=>historyFilter==='all'||(historyFilter==='found'&&r.found===true)||(historyFilter==='notfound'&&r.found===false));
+  if(!shown.length){h.innerHTML='<div class="empty">No hay registros para este filtro.</div>';updateSummary();return}
+  h.innerHTML=shown.map(r=>{
+    const state=r.sample?'📷 MUESTRA':r.found===true?'✓ Coincidencia':r.found===false?'✕ No encontrado':'';
+    const thumb=r.photo?`<img class="thumb" src="${r.photo}" alt="Muestra ${escapeHtml(r.code)}" data-photo-id="${r.id}">`:'';
+    return `<div class="item ${r.sample?'sampled':r.found===true?'found':r.found===false?'notfound':''}" data-id="${r.id}">
+      <div class="itemMain">
+        <span class="code">${escapeHtml(r.code)}</span>
+        <span class="key">${escapeHtml(r.key)}</span>
+        <span class="itemState ${r.sample?'sampleMark':''}">${state}</span>
+      </div>
+      ${thumb}
+    </div>`;
+  }).join('');
+  h.scrollTop=0;
+  updateSummary();
+}
+
+function normalizeCode(v){
+  return String(v ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s\-_.\/]+/g,'')
+    .replace(/[^A-Z0-9]/g,'');
+}
+function verifyManual(){
+  const input=$('#manualCode');
+  const code=normalizeCode(input.value);
+  if(!code){
+    setStatus('Escribe o pega un código.');
+    input.focus();
+    return;
+  }
+  accept(code);
+  input.value='';
+  input.focus();
+}
+
+const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
+function capture(){const vw=video.videoWidth,vh=video.videoHeight;if(!vw||!vh)return video;const x=vw*.04,y=vh*.36,w=vw*.92,h=vh*.28,scale=1.35;canvas.width=Math.max(480,Math.round(w*scale));canvas.height=Math.max(180,Math.round(h*scale));ctx.drawImage(video,x,y,w,h,0,0,canvas.width,canvas.height);return canvas}
+async function setupDetector(){if(!('BarcodeDetector' in window))throw new Error('Motor nativo BarcodeDetector no disponible');const supported=await BarcodeDetector.getSupportedFormats();const usable=formats.filter(f=>supported.includes(f));detector=new BarcodeDetector(usable.length?{formats:usable}:undefined);return usable.length}
+async function loop(){if(!running||!detector)return;try{const found=await detector.detect(capture());if(found?.length)accept(found[0].rawValue)}catch(e){}timer=setTimeout(loop,100)}
+function capabilities(){const c=track?.getCapabilities?.()||{},z=$('#zoom');if(c.zoom){z.min=c.zoom.min;z.max=c.zoom.max;z.step=c.zoom.step||.1;z.value=c.zoom.min;z.disabled=false;$('#zoomValue').textContent=Number(z.value).toFixed(1)+'×'}else z.disabled=true;$('#torch').disabled=!c.torch}
+async function stop(){running=false;clearTimeout(timer);if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;track=null;video.srcObject=null;$('#start').textContent='Iniciar cámara';badge.textContent='Detenido'}
+async function start(){if(!services.length){setStatus('Carga al menos un Excel antes de iniciar la cámara.');return}await stop();setStatus('Solicitando cámara trasera…');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});video.srcObject=stream;await video.play();track=stream.getVideoTracks()[0];const n=await setupDetector();running=true;capabilities();badge.textContent='Motor nativo';$('#start').textContent='Detener';setStatus(`${track.label||'Cámara trasera'} · ${n} formatos`);loop()}catch(e){running=false;badge.textContent='Error';setStatus('No se pudo iniciar: '+e.message)}}
+
+
+let globalIndex=new Map(),pendingCode='',pendingMatches=[];
+
+function indexWorkbook(workbook){
+  const codes=new Set();
+  for(const sheetName of workbook.SheetNames){
+    const sheet=workbook.Sheets[sheetName];
+    const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:'',raw:false,blankrows:false});
+    for(const row of rows){
+      if(!Array.isArray(row))continue;
+      for(const cell of row){
+        const code=normalizeCode(cell);
+        if(code)codes.add(code);
+      }
+    }
+  }
+  return codes;
+}
+
+function rebuildGlobalIndex(){
+  globalIndex=new Map();
+  services.forEach((service,serviceIndex)=>{
+    for(const code of service.codes){
+      if(!globalIndex.has(code))globalIndex.set(code,new Set());
+      globalIndex.get(code).add(serviceIndex);
+    }
+  });
+  const ambiguous=[...globalIndex.values()].filter(set=>set.size>1).length;
+  const totalValues=globalIndex.size;
+  $('#excelInfo').textContent=services.length
+    ? `${services.length} servicio(s) · ${totalValues} valores únicos indexados${ambiguous?` · ${ambiguous} valores presentes en más de un Excel`:''}.`
+    : 'Carga uno o varios Excel. Se indexarán automáticamente todas sus hojas.';
+}
+
+function renderServiceSelect(){
+  const select=$('#serviceSelect');
+  if(!services.length){
+    select.innerHTML='<option value="">Sin servicios cargados</option>';
+    select.disabled=true;
+    $('#serviceKey').value='';
+    $('#serviceKey').disabled=true;
+    $('#fileCount').textContent='0 archivos';
+    rebuildGlobalIndex();
+    return;
+  }
+  const previous=Number(select.value);
+  select.innerHTML=services.map((s,i)=>`<option value="${i}">${escapeHtml(s.key||s.fileName)}${s.key?` · ${escapeHtml(s.fileName)}`:''}</option>`).join('');
+  select.disabled=false;
+  $('#serviceKey').disabled=false;
+  const target=Number.isInteger(previous)&&services[previous]?previous:services.length-1;
+  select.value=String(target);
+  $('#serviceKey').value=services[target].key;
+  $('#fileCount').textContent=`${services.length} archivo${services.length===1?'':'s'}`;
+  rebuildGlobalIndex();
+  updateSummary();
+}
+
+function clearAmbiguity(){
+  pendingCode='';
+  pendingMatches=[];
+  $('#ambiguity').hidden=true;
+  $('#ambiguityText').textContent='';
+  $('#ambiguityButtons').innerHTML='';
+}
+
+function newRecordId(){return (crypto.randomUUID?.()||`${Date.now()}-${Math.random().toString(16).slice(2)}`)}
+
+function addResolvedRecord(code,serviceIndex,found=true){
+  const service=services[serviceIndex];
+  const key=service?service.key:'NO ENCONTRADO';
+  currentCode=code;
+  const rec={id:newRecordId(),code,key,serviceId:service?.serviceId||null,sample:false,found,photo:null};
+  records.unshift(rec);
+  currentRecordId=rec.id;
+  $('#value').textContent=code;
+  $('#meta').textContent=found?`Encontrado · ${key}`:'No encontrado en la sesión';
+  $('#sample').disabled=false;
+  $('#sample').textContent='📷 Muestra';
+  render();
+  scheduleSave();
+  beep();
+  $('#viewer').classList.remove('flash');
+  void $('#viewer').offsetWidth;
+  $('#viewer').classList.add('flash');
+}
+
+function resolveAmbiguity(serviceIndex){
+  if(!pendingCode||!services[serviceIndex])return;
+  const code=pendingCode;
+  clearAmbiguity();
+  addResolvedRecord(code,serviceIndex,true);
+  setStatus(`Código asociado a ${services[serviceIndex].key}.`);
+}
+
+
+function existingPhysicalRecord(code){
+  const n=normalizeCode(code);
+  return records.find(r=>normalizeCode(r.code)===n)||null;
+}
+function focusExistingRecord(r){
+  currentCode=r.code;currentRecordId=r.id;
+  $('#value').textContent=r.code;
+  $('#meta').textContent=r.found===true?`Ya registrado · Coincidente · ${r.key}`:'Ya registrado · No coincidente';
+  $('#sample').disabled=false;
+  setStatus('Código físico ya registrado en Prepacking; no se duplicó.');
+}
+function accept(code){
+  if(!code)return;
+  if(!services.length){
+    setStatus('Carga al menos un Excel antes de verificar.');
+    return;
+  }
+  const normalized=normalizeCode(code);
+  if(!normalized)return;
+  if(prepackMode){
+    const existing=existingPhysicalRecord(normalized);
+    if(existing){
+      const newMatches=globalIndex.get(normalized);
+      if(existing.found===false&&newMatches&&newMatches.size===1){
+        const i=[...newMatches][0],svc=services[i];
+        existin
