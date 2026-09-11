@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<title>Scanner Experimental v0.3.4-beta1</title>
+<title>Scanner Experimental v0.3.4-beta2</title>
 <style>
 :root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -54,7 +54,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.3.4-beta1</h1><small>Nativo · índice completo · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<header><div><h1>Scanner Experimental v0.3.4-beta2</h1><small>Nativo · índice completo · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
 <main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
 <section class="controls">
   <div class="row">
@@ -125,7 +125,12 @@ const $=s=>document.querySelector(s),video=$('#video'),statusEl=$('#status'),bad
 let stream=null,track=null,running=false,torchOn=false,detector=null,timer=0,lastAccepted='',lastAt=0,currentCode='',currentRecordId=null,resumeAfterPhoto=false;
 let prepackMode=false,historyFilter='all';
 let services=[];
-function newServiceId(){return (crypto.randomUUID?.()||`svc-${Date.now()}-${Math.random().toString(16).slice(2)}`)}
+function newServiceId(){
+  try{
+    if(window.crypto && typeof window.crypto.randomUUID==='function') return window.crypto.randomUUID();
+  }catch(e){}
+  return `svc-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 const records=[],formats=['code_128','code_39','code_93','codabar','ean_13','ean_8','itf','upc_a','upc_e'];
 function setStatus(t){statusEl.textContent=t}
 function serviceKey(){return $('#serviceKey').value.trim()}
@@ -323,4 +328,350 @@ function accept(code){
       const newMatches=globalIndex.get(normalized);
       if(existing.found===false&&newMatches&&newMatches.size===1){
         const i=[...newMatches][0],svc=services[i];
-        existin
+        existing.found=true;existing.serviceId=svc.serviceId;existing.key=svc.key;
+        render();scheduleSave();
+        $('#value').textContent=normalized;$('#meta').textContent=`Actualizado · Coincidente · ${svc.key}`;
+        setStatus('El código antes no coincidente ahora fue encontrado en un Excel activo.');
+        beep();
+        return;
+      }
+      focusExistingRecord(existing);
+      return;
+    }
+  }
+  const now=Date.now();
+  if(normalized===lastAccepted&&now-lastAt<1800)return;
+  lastAccepted=normalized;
+  lastAt=now;
+
+  const matchSet=globalIndex.get(normalized);
+  const matches=matchSet?[...matchSet]:[];
+
+  if(matches.length===0){
+    clearAmbiguity();
+    currentCode=normalized;
+    const rec={id:newRecordId(),code:normalized,key:'NO ENCONTRADO',serviceId:null,sample:false,found:false,photo:null};
+    records.unshift(rec);
+    currentRecordId=rec.id;
+    $('#value').textContent=normalized;
+    $('#meta').textContent='No encontrado en ningún Excel de la sesión';
+    $('#sample').disabled=false;
+    $('#sample').textContent='📷 Muestra';
+    render();
+    scheduleSave();
+    beep();
+    $('#viewer').classList.remove('flash');
+    void $('#viewer').offsetWidth;
+    $('#viewer').classList.add('flash');
+    return;
+  }
+
+  if(matches.length===1){
+    clearAmbiguity();
+    addResolvedRecord(normalized,matches[0],true);
+    return;
+  }
+
+  currentCode='';
+  currentRecordId=null;
+  pendingCode=normalized;
+  pendingMatches=matches;
+  $('#value').textContent=normalized;
+  $('#meta').textContent=`Encontrado en ${matches.length} inspecciones`;
+  $('#sample').disabled=true;
+  $('#ambiguity').hidden=false;
+  $('#ambiguityText').textContent=`${normalized} aparece en: ${matches.map(i=>services[i].key).join(' · ')}`;
+  $('#ambiguityButtons').innerHTML=matches.map(i=>`<button type="button" data-service-index="${i}">${escapeHtml(services[i].key)}</button>`).join('');
+  setStatus('Selecciona la inspección correcta para registrar la lectura.');
+  beep();
+}
+
+$('#ambiguityButtons').addEventListener('click',e=>{
+  const btn=e.target.closest('button[data-service-index]');
+  if(!btn)return;
+  resolveAmbiguity(Number(btn.dataset.serviceIndex));
+});
+
+
+
+function removeSelectedExcel(){
+  const i=selectedServiceIndex();
+  if(i<0)return;
+  const removed=services[i];
+  services.splice(i,1);
+  clearAmbiguity();
+  currentCode='';
+  currentRecordId=null;
+  lastAccepted='';
+  renderServiceSelect();
+  render();
+  $('#value').textContent='Excel retirado';
+  $('#meta').textContent=(removed?.key||removed?.fileName||'Excel')+' fue retirado de la sesión activa.';
+  $('#sample').disabled=true;
+  $('#sample').textContent='📷 Muestra';
+  setStatus('Excel retirado. El histórico se conserva.');
+  saveSessionNow();
+}
+
+async function imageFileToThumbnail(file){
+  const dataUrl=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});
+  const img=await new Promise((resolve,reject)=>{const im=new Image();im.onload=()=>resolve(im);im.onerror=reject;im.src=dataUrl;});
+  const max=420,scale=Math.min(1,max/Math.max(img.width,img.height));
+  const c=document.createElement('canvas');
+  c.width=Math.max(1,Math.round(img.width*scale));c.height=Math.max(1,Math.round(img.height*scale));
+  c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+  return c.toDataURL('image/jpeg',.62);
+}
+function openPhoto(photo){if(!photo)return;$('#photoModalImg').src=photo;$('#photoModal').classList.add('open');$('#photoModal').setAttribute('aria-hidden','false')}
+function closePhoto(){$('#photoModal').classList.remove('open');$('#photoModal').setAttribute('aria-hidden','true');$('#photoModalImg').src=''}
+
+
+const STORAGE_KEY='verificadorPacking_session_v034b1';
+let saveTimer=0;
+
+function serializableState(includePhotos=true){
+  return {
+    version:2,
+    savedAt:Date.now(),
+    prepackMode,
+    historyFilter,
+    services:services.map(s=>({
+      serviceId:s.serviceId||newServiceId(),
+      fileName:s.fileName,
+      key:s.key,
+      codes:[...(s.codes||[])]
+    })),
+    records:records.map(r=>({
+      id:r.id,
+      code:r.code,
+      key:r.key,
+      serviceId:r.serviceId||null,
+      sample:Boolean(r.sample),
+      found:r.found,
+      photo:includePhotos?(r.photo||null):null
+    }))
+  };
+}
+
+function saveSessionNow(){
+  clearTimeout(saveTimer);
+  try{
+    localStorage.setItem(STORAGE_KEY,JSON.stringify(serializableState(true)));
+    return true;
+  }catch(e){
+    try{
+      localStorage.setItem(STORAGE_KEY,JSON.stringify(serializableState(false)));
+      setStatus('Sesión guardada, pero sin fotos: se alcanzó el límite de almacenamiento local.');
+      return false;
+    }catch(e2){
+      setStatus('⚠ No se pudo guardar automáticamente la sesión.');
+      return false;
+    }
+  }
+}
+
+function scheduleSave(){
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(saveSessionNow,120);
+}
+
+function restoreSession(){
+  const raw=localStorage.getItem(STORAGE_KEY)||localStorage.getItem('verificadorPacking_session_v032');
+  if(!raw)return false;
+  try{
+    const state=JSON.parse(raw);
+    if(!state||!Array.isArray(state.services)||!Array.isArray(state.records))return false;
+
+    prepackMode=Boolean(state.prepackMode);
+    historyFilter=['all','found','notfound'].includes(state.historyFilter)?state.historyFilter:'all';
+    $('#prepackMode').classList.toggle('active',prepackMode);
+    $('#prepackMode').textContent=prepackMode?'Prepacking: ACTIVADO':'Prepacking: DESACTIVADO';
+    document.querySelectorAll('#filterRow [data-filter]').forEach(b=>b.classList.toggle('active',b.dataset.filter===historyFilter));
+
+    services=state.services.map(s=>({
+      serviceId:s.serviceId||newServiceId(),
+      fileName:s.fileName||'Excel restaurado',
+      key:s.key||'',
+      workbook:null,
+      codes:new Set(Array.isArray(s.codes)?s.codes:[])
+    }));
+
+    records.length=0;
+    for(const r of state.records){
+      records.push({
+        id:r.id||newRecordId(),
+        code:r.code||'',
+        key:r.key||'',
+        serviceId:r.serviceId||null,
+        sample:Boolean(r.sample),
+        found:r.found,
+        photo:r.photo||null
+      });
+    }
+
+    renderServiceSelect();
+    render();
+    updateSummary();
+    currentCode='';
+    currentRecordId=null;
+    $('#value').textContent='Sesión restaurada';
+    $('#meta').textContent=`${records.length} registro(s) recuperados automáticamente.`;
+    setStatus(`Sesión recuperada · ${services.length} servicio(s) · ${records.length} registro(s).`);
+    return true;
+  }catch(e){
+    console.error('Error restaurando sesión',e);
+    return false;
+  }
+}
+
+function readFileAsArrayBuffer(file){
+  return new Promise((resolve,reject)=>{
+    try{
+      const reader=new FileReader();
+      reader.onload=()=>resolve(reader.result);
+      reader.onerror=()=>reject(reader.error||new Error('Error leyendo archivo'));
+      reader.onabort=()=>reject(new Error('Lectura cancelada'));
+      reader.readAsArrayBuffer(file);
+    }catch(e){reject(e)}
+  });
+}
+
+$('#excelFiles').addEventListener('change',async function(){
+  const selected=Array.from(this.files||[]);
+  if(!selected.length){
+    setStatus('No se seleccionaron archivos.');
+    return;
+  }
+  if(typeof XLSX==='undefined'){
+    setStatus('No se pudo cargar el lector de Excel. Revisa la conexión a internet.');
+    return;
+  }
+  let loaded=0;
+  for(const file of selected){
+    try{
+      const buffer=await readFileAsArrayBuffer(file);
+      const workbook=XLSX.read(buffer,{type:'array',cellDates:false});
+      const codes=indexWorkbook(workbook);
+      services.push({
+        serviceId:newServiceId(),
+        fileName:file.name,
+        key:file.name.replace(/\.[^.]+$/,''),
+        workbook,
+        codes
+      });
+      loaded++;
+    }catch(error){
+      console.error(error);
+      setStatus(`No se pudo leer ${file.name}: ${error?.message||error}`);
+    }
+  }
+  renderServiceSelect();
+  scheduleSave();
+  setStatus(`${loaded} archivo(s) indexado(s). Ya puedes verificar códigos.`);
+  this.value='';
+});
+
+$('#serviceSelect').addEventListener('change',function(){
+  const i=Number(this.value);
+  if(!Number.isInteger(i)||!services[i])return;
+  $('#serviceKey').value=services[i].key;
+  setStatus(`Servicio seleccionado para editar clave: ${services[i].key}`);
+});
+
+$('#serviceKey').addEventListener('input',function(){
+  const i=Number($('#serviceSelect').value);
+  if(!Number.isInteger(i)||!services[i])return;
+  const service=services[i];
+  service.key=this.value.trim();
+  for(const r of records){if(r.serviceId===service.serviceId)r.key=service.key}
+  const opt=$('#serviceSelect').options[i];
+  if(opt)opt.textContent=(service.key?service.key+' · ':'')+service.fileName;
+  render();
+  scheduleSave();
+});
+
+
+function safeSheetName(s){return String(s||'Prepacking').replace(/[\\/?*\[\]:]/g,' ').slice(0,31)||'Prepacking'}
+function exportPrepacking(){
+  if(typeof XLSX==='undefined'){setStatus('No se pudo cargar el generador de Excel.');return}
+  const data=uniquePhysicalRecords().slice().reverse();
+  if(!data.length){setStatus('No hay lecturas para exportar.');return}
+  const wb=XLSX.utils.book_new();
+  const fmt=$('#exportFormat').value;
+  const found=data.filter(r=>r.found===true),notfound=data.filter(r=>r.found===false);
+  if(fmt==='twoSheets'){
+    const a=found.map(r=>({Codigo:r.code,Servicio:r.key||''}));
+    const b=notfound.map(r=>({Codigo:r.code,Servicio:''}));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(a.length?a:[{Codigo:'',Servicio:''}]),'Coincidentes');
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(b.length?b:[{Codigo:'',Servicio:''}]),'No coincidentes');
+  }else if(fmt==='conditionColumn'){
+    const rows=data.map(r=>({Codigo:r.code,Condicion:r.found===true?'Coincidente':'No coincidente',Servicio:r.found===true?(r.key||''):''}));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Prepacking');
+  }else{
+    const n=Math.max(found.length,notfound.length),rows=[];
+    for(let i=0;i<n;i++)rows.push({'Coincidentes':found[i]?.code||'','No coincidentes':notfound[i]?.code||''});
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Prepacking');
+  }
+  const stamp=new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb,`Prepacking_${stamp}.xlsx`);
+  setStatus(`Excel generado · ${found.length} coincidente(s) · ${notfound.length} no coincidente(s).`);
+}
+
+$('#prepackMode').onclick=()=>{
+  prepackMode=!prepackMode;
+  $('#prepackMode').classList.toggle('active',prepackMode);
+  $('#prepackMode').textContent=prepackMode?'Prepacking: ACTIVADO':'Prepacking: DESACTIVADO';
+  setStatus(prepackMode?'Modo Prepacking activo: cada código físico se registra una sola vez.':'Modo Prepacking desactivado: se permiten lecturas repetidas.');
+  scheduleSave();
+};
+document.querySelectorAll('#filterRow [data-filter]').forEach(btn=>btn.addEventListener('click',()=>{
+  historyFilter=btn.dataset.filter;
+  document.querySelectorAll('#filterRow [data-filter]').forEach(b=>b.classList.toggle('active',b===btn));
+  render();scheduleSave();
+}));
+$('#exportPrepacking').onclick=exportPrepacking;
+
+$('#verifyManual').onclick=verifyManual;
+$('#manualCode').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){
+    e.preventDefault();
+    verifyManual();
+  }
+});
+
+$('#start').onclick=()=>running?stop():start();
+$('#torch').onclick=async()=>{if(!track)return;torchOn=!torchOn;try{await track.applyConstraints({advanced:[{torch:torchOn}]});$('#torch').classList.toggle('active',torchOn)}catch(e){setStatus('Linterna no disponible')}};
+$('#zoom').oninput=async e=>{const v=Number(e.target.value);$('#zoomValue').textContent=v.toFixed(1)+'×';try{await track.applyConstraints({advanced:[{zoom:v}]})}catch(e){}};
+$('#sample').onclick=async()=>{
+  const r=records.find(x=>x.id===currentRecordId);
+  if(!r)return;
+  if(r.sample&&r.photo){
+    r.sample=false;r.photo=null;render();scheduleSave();$('#sample').textContent='📷 Muestra';setStatus('Marca de muestra y fotografía retiradas.');return;
+  }
+  resumeAfterPhoto=running;
+  if(running)await stop();
+  setStatus('Toma la fotografía de la muestra y confírmala.');
+  $('#samplePhotoInput').click();
+};
+$('#samplePhotoInput').addEventListener('change',async function(){
+  const file=this.files?.[0],r=records.find(x=>x.id===currentRecordId);
+  if(file&&r){
+    try{r.photo=await imageFileToThumbnail(file);r.sample=true;render();scheduleSave();$('#sample').textContent='✓ Muestra';setStatus('Muestra registrada con fotografía.')}
+    catch(e){setStatus('No se pudo procesar la fotografía.')}
+  }else if(r){setStatus('Fotografía de muestra cancelada.')}
+  this.value='';
+  if(resumeAfterPhoto){resumeAfterPhoto=false;await start();}
+});
+$('#history').addEventListener('click',e=>{const img=e.target.closest('[data-photo-id]');if(!img)return;const r=records.find(x=>x.id===img.dataset.photoId);if(r?.photo)openPhoto(r.photo)});
+$('#closePhotoModal').onclick=closePhoto;
+$('#photoModal').addEventListener('click',e=>{if(e.target.id==='photoModal')closePhoto()});
+$('#removeExcel').onclick=removeSelectedExcel;
+$('#clearHistory').onclick=()=>{records.length=0;currentCode='';currentRecordId=null;lastAccepted='';clearAmbiguity();render();$('#value').textContent='Sin lectura';$('#meta').textContent='Carga los Excel y apunta hacia un código.';$('#sample').disabled=true;$('#sample').textContent='📷 Muestra';setStatus('Histórico vaciado.');updateSummary();scheduleSave()};
+window.addEventListener('pagehide',()=>{saveSessionNow();stop()});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveSessionNow()});
+window.addEventListener('beforeunload',saveSessionNow);
+restoreSession();
+if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js');
+</script>
+</body>
+</html>
