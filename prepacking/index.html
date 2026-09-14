@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<title>Scanner Experimental v0.3.4-beta2</title>
+<title>Scanner Experimental v0.3.4-beta3</title>
 <style>
 :root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -41,6 +41,13 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 .prepackCard{border:1px solid var(--line);border-radius:11px;background:#0d263b;padding:8px 6px;text-align:center}
 .prepackCard strong{display:block;font-size:19px}.prepackCard span{display:block;margin-top:2px;font-size:10px;color:var(--muted)}
 .filterBtn{padding:8px 10px;font-size:12px}.exportRow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px}.prepackToggle{background:#365b42}.prepackToggle.active{background:#18794e;outline:2px solid #d8edff}
+.readMode{background:#314f6a}.readMode.single{background:#684f28}
+.nextScan{background:#18794e}
+.itemActions{display:flex;align-items:center;gap:7px}
+.deleteRecord{padding:8px 9px;background:#653838;font-size:13px}
+.undoBar{display:none;align-items:center;justify-content:space-between;gap:8px;border:1px solid #6b5d32;border-radius:10px;background:#2c281a;padding:8px 10px}
+.undoBar.show{display:flex}.undoBar span{font-size:12px;color:#f3e5ad}.undoBar button{padding:7px 10px;background:#725f1c}
+
 @media(max-width:799px){
   html,body{height:auto;min-height:100%}
   body{overflow:auto}
@@ -54,7 +61,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.3.4-beta2</h1><small>Nativo · índice completo · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<header><div><h1>Scanner Experimental v0.3.4-beta3</h1><small>Nativo · índice completo · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
 <main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
 <section class="controls">
   <div class="row">
@@ -107,10 +114,16 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
     <button id="verifyManual" class="primary">Verificar</button>
   </div>
 
+  <div class="row">
+    <button id="readMode" class="readMode grow">Lector: CONTINUO</button>
+    <button id="nextScan" class="nextScan grow" disabled>Siguiente lectura</button>
+  </div>
+
   <div class="row"><button id="torch" disabled>🔦 Linterna</button><div class="grow"><label>Zoom: <span id="zoomValue">1.0×</span></label><input id="zoom" type="range" min="1" max="1" step="0.1" value="1" disabled></div></div>
   <div class="result"><strong id="value">Sin lectura</strong><div class="meta" id="meta">Carga los Excel y apunta hacia un código.</div></div>
   <div class="row"><button id="start" class="primary grow">Iniciar cámara</button><button id="sample" class="sample" disabled>📷 Muestra</button><button id="removeExcel" class="removeExcel" disabled>Quitar Excel</button></div>
   <div class="history"><div class="historyHead"><strong>Histórico</strong><span id="count">0</span></div><div class="historyList" id="history"><div class="empty">Aún no hay lecturas.</div></div></div>
+  <div id="undoBar" class="undoBar"><span id="undoText">Registro eliminado.</span><button id="undoDelete" type="button">Deshacer</button></div>
   <div class="row"><button id="clearHistory" class="grow">Vaciar histórico</button></div>
   <div class="status" id="status">La cámara requiere HTTPS o GitHub Pages.</div>
 </section>
@@ -124,6 +137,9 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 const $=s=>document.querySelector(s),video=$('#video'),statusEl=$('#status'),badge=$('#engineBadge');
 let stream=null,track=null,running=false,torchOn=false,detector=null,timer=0,lastAccepted='',lastAt=0,currentCode='',currentRecordId=null,resumeAfterPhoto=false;
 let prepackMode=false,historyFilter='all';
+let readMode='continuous',detectorPaused=false;
+let scanCandidate='',scanCandidateCount=0,lockedScanCode='',lockedMissingFrames=0;
+let deletedSnapshot=null,undoTimer=0;
 let services=[];
 function newServiceId(){
   try{
@@ -173,7 +189,10 @@ function render(){
         <span class="key">${escapeHtml(r.key)}</span>
         <span class="itemState ${r.sample?'sampleMark':''}">${state}</span>
       </div>
-      ${thumb}
+      <div class="itemActions">
+        ${thumb}
+        <button class="deleteRecord" type="button" data-delete-id="${r.id}" aria-label="Eliminar ${escapeHtml(r.code)}">🗑</button>
+      </div>
     </div>`;
   }).join('');
   h.scrollTop=0;
@@ -203,10 +222,76 @@ function verifyManual(){
 const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
 function capture(){const vw=video.videoWidth,vh=video.videoHeight;if(!vw||!vh)return video;const x=vw*.04,y=vh*.36,w=vw*.92,h=vh*.28,scale=1.35;canvas.width=Math.max(480,Math.round(w*scale));canvas.height=Math.max(180,Math.round(h*scale));ctx.drawImage(video,x,y,w,h,0,0,canvas.width,canvas.height);return canvas}
 async function setupDetector(){if(!('BarcodeDetector' in window))throw new Error('Motor nativo BarcodeDetector no disponible');const supported=await BarcodeDetector.getSupportedFormats();const usable=formats.filter(f=>supported.includes(f));detector=new BarcodeDetector(usable.length?{formats:usable}:undefined);return usable.length}
-async function loop(){if(!running||!detector)return;try{const found=await detector.detect(capture());if(found?.length)accept(found[0].rawValue)}catch(e){}timer=setTimeout(loop,100)}
+function resetScanConfirmation(){
+  scanCandidate='';
+  scanCandidateCount=0;
+}
+function armNextScan(){
+  detectorPaused=false;
+  resetScanConfirmation();
+  lockedScanCode='';
+  lockedMissingFrames=0;
+  $('#nextScan').disabled=true;
+  setStatus('Lector listo para el siguiente código.');
+}
+function processScannerFrame(found){
+  if(detectorPaused||pendingCode)return;
+  const detected=(found||[])
+    .map(x=>normalizeCode(x?.rawValue))
+    .filter(Boolean);
+
+  if(lockedScanCode){
+    if(detected.includes(lockedScanCode)){
+      lockedMissingFrames=0;
+      return;
+    }
+    lockedMissingFrames++;
+    if(lockedMissingFrames<3)return;
+    lockedScanCode='';
+    lockedMissingFrames=0;
+    resetScanConfirmation();
+  }
+
+  if(!detected.length){
+    resetScanConfirmation();
+    return;
+  }
+
+  const code=detected[0];
+  if(code===scanCandidate)scanCandidateCount++;
+  else{
+    scanCandidate=code;
+    scanCandidateCount=1;
+  }
+
+  // Los códigos presentes en algún Excel requieren 2 frames concordantes.
+  // Los no encontrados requieren 3 para reducir falsos "No coincidente".
+  const threshold=globalIndex.has(code)?2:3;
+  setStatus(`Confirmando ${code} · ${scanCandidateCount}/${threshold}`);
+  if(scanCandidateCount<threshold)return;
+
+  lockedScanCode=code;
+  lockedMissingFrames=0;
+  resetScanConfirmation();
+  accept(code);
+
+  if(readMode==='single'){
+    detectorPaused=true;
+    $('#nextScan').disabled=false;
+    setStatus('Lectura confirmada. Pulsa “Siguiente lectura” para continuar.');
+  }
+}
+async function loop(){
+  if(!running||!detector)return;
+  try{
+    const found=await detector.detect(capture());
+    processScannerFrame(found);
+  }catch(e){}
+  timer=setTimeout(loop,100);
+}
 function capabilities(){const c=track?.getCapabilities?.()||{},z=$('#zoom');if(c.zoom){z.min=c.zoom.min;z.max=c.zoom.max;z.step=c.zoom.step||.1;z.value=c.zoom.min;z.disabled=false;$('#zoomValue').textContent=Number(z.value).toFixed(1)+'×'}else z.disabled=true;$('#torch').disabled=!c.torch}
-async function stop(){running=false;clearTimeout(timer);if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;track=null;video.srcObject=null;$('#start').textContent='Iniciar cámara';badge.textContent='Detenido'}
-async function start(){if(!services.length){setStatus('Carga al menos un Excel antes de iniciar la cámara.');return}await stop();setStatus('Solicitando cámara trasera…');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});video.srcObject=stream;await video.play();track=stream.getVideoTracks()[0];const n=await setupDetector();running=true;capabilities();badge.textContent='Motor nativo';$('#start').textContent='Detener';setStatus(`${track.label||'Cámara trasera'} · ${n} formatos`);loop()}catch(e){running=false;badge.textContent='Error';setStatus('No se pudo iniciar: '+e.message)}}
+async function stop(){running=false;clearTimeout(timer);detectorPaused=false;resetScanConfirmation();lockedScanCode='';lockedMissingFrames=0;$('#nextScan').disabled=true;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;track=null;video.srcObject=null;$('#start').textContent='Iniciar cámara';badge.textContent='Detenido'}
+async function start(){if(!services.length){setStatus('Carga al menos un Excel antes de iniciar la cámara.');return}await stop();setStatus('Solicitando cámara trasera…');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});video.srcObject=stream;await video.play();track=stream.getVideoTracks()[0];const n=await setupDetector();running=true;detectorPaused=false;resetScanConfirmation();lockedScanCode='';lockedMissingFrames=0;capabilities();badge.textContent='Motor nativo';$('#start').textContent='Detener';setStatus(`${track.label||'Cámara trasera'} · ${n} formatos · ${readMode==='single'?'una lectura':'continuo'}`);loop()}catch(e){running=false;badge.textContent='Error';setStatus('No se pudo iniciar: '+e.message)}}
 
 
 let globalIndex=new Map(),pendingCode='',pendingMatches=[];
@@ -273,7 +358,12 @@ function clearAmbiguity(){
   $('#ambiguityButtons').innerHTML='';
 }
 
-function newRecordId(){return (crypto.randomUUID?.()||`${Date.now()}-${Math.random().toString(16).slice(2)}`)}
+function newRecordId(){
+  try{
+    if(window.crypto && typeof window.crypto.randomUUID==='function')return window.crypto.randomUUID();
+  }catch(e){}
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 function addResolvedRecord(code,serviceIndex,found=true){
   const service=services[serviceIndex];
@@ -426,7 +516,7 @@ function openPhoto(photo){if(!photo)return;$('#photoModalImg').src=photo;$('#pho
 function closePhoto(){$('#photoModal').classList.remove('open');$('#photoModal').setAttribute('aria-hidden','true');$('#photoModalImg').src=''}
 
 
-const STORAGE_KEY='verificadorPacking_session_v034b1';
+const STORAGE_KEY='verificadorPacking_session_v034b3';
 let saveTimer=0;
 
 function serializableState(includePhotos=true){
@@ -435,6 +525,7 @@ function serializableState(includePhotos=true){
     savedAt:Date.now(),
     prepackMode,
     historyFilter,
+    readMode,
     services:services.map(s=>({
       serviceId:s.serviceId||newServiceId(),
       fileName:s.fileName,
@@ -476,7 +567,7 @@ function scheduleSave(){
 }
 
 function restoreSession(){
-  const raw=localStorage.getItem(STORAGE_KEY)||localStorage.getItem('verificadorPacking_session_v032');
+  const raw=localStorage.getItem(STORAGE_KEY)||localStorage.getItem('verificadorPacking_session_v034b1')||localStorage.getItem('verificadorPacking_session_v032');
   if(!raw)return false;
   try{
     const state=JSON.parse(raw);
@@ -484,6 +575,10 @@ function restoreSession(){
 
     prepackMode=Boolean(state.prepackMode);
     historyFilter=['all','found','notfound'].includes(state.historyFilter)?state.historyFilter:'all';
+    readMode=state.readMode==='single'?'single':'continuous';
+    $('#readMode').classList.toggle('single',readMode==='single');
+    $('#readMode').textContent=readMode==='single'?'Lector: UNA LECTURA':'Lector: CONTINUO';
+    $('#nextScan').disabled=true;
     $('#prepackMode').classList.toggle('active',prepackMode);
     $('#prepackMode').textContent=prepackMode?'Prepacking: ACTIVADO':'Prepacking: DESACTIVADO';
     document.querySelectorAll('#filterRow [data-filter]').forEach(b=>b.classList.toggle('active',b.dataset.filter===historyFilter));
@@ -639,6 +734,19 @@ $('#manualCode').addEventListener('keydown',e=>{
   }
 });
 
+$('#readMode').onclick=()=>{
+  readMode=readMode==='continuous'?'single':'continuous';
+  $('#readMode').classList.toggle('single',readMode==='single');
+  $('#readMode').textContent=readMode==='single'?'Lector: UNA LECTURA':'Lector: CONTINUO';
+  if(readMode==='continuous'&&detectorPaused)armNextScan();
+  else if(readMode==='single')setStatus('Modo UNA LECTURA: el detector se pausará después de cada código confirmado.');
+  else setStatus('Modo CONTINUO: el mismo código queda bloqueado hasta salir del encuadre.');
+  scheduleSave();
+};
+$('#nextScan').onclick=()=>{
+  if(readMode!=='single')return;
+  armNextScan();
+};
 $('#start').onclick=()=>running?stop():start();
 $('#torch').onclick=async()=>{if(!track)return;torchOn=!torchOn;try{await track.applyConstraints({advanced:[{torch:torchOn}]});$('#torch').classList.toggle('active',torchOn)}catch(e){setStatus('Linterna no disponible')}};
 $('#zoom').oninput=async e=>{const v=Number(e.target.value);$('#zoomValue').textContent=v.toFixed(1)+'×';try{await track.applyConstraints({advanced:[{zoom:v}]})}catch(e){}};
@@ -662,11 +770,58 @@ $('#samplePhotoInput').addEventListener('change',async function(){
   this.value='';
   if(resumeAfterPhoto){resumeAfterPhoto=false;await start();}
 });
-$('#history').addEventListener('click',e=>{const img=e.target.closest('[data-photo-id]');if(!img)return;const r=records.find(x=>x.id===img.dataset.photoId);if(r?.photo)openPhoto(r.photo)});
+function hideUndo(){
+  clearTimeout(undoTimer);
+  $('#undoBar').classList.remove('show');
+}
+function deleteRecordById(id){
+  const index=records.findIndex(r=>r.id===id);
+  if(index<0)return;
+  hideUndo();
+  const record=records[index];
+  deletedSnapshot={record:{...record},index};
+  records.splice(index,1);
+  if(currentRecordId===id){
+    currentRecordId=null;
+    currentCode='';
+    $('#value').textContent='Registro eliminado';
+    $('#meta').textContent=record.code;
+    $('#sample').disabled=true;
+    $('#sample').textContent='📷 Muestra';
+  }
+  render();
+  scheduleSave();
+  $('#undoText').textContent=`${record.code} eliminado del histórico.`;
+  $('#undoBar').classList.add('show');
+  undoTimer=setTimeout(()=>{deletedSnapshot=null;hideUndo()},5000);
+  setStatus('Registro eliminado. Contadores e informe Prepacking fueron actualizados.');
+}
+$('#undoDelete').onclick=()=>{
+  if(!deletedSnapshot)return;
+  clearTimeout(undoTimer);
+  const {record,index}=deletedSnapshot;
+  records.splice(Math.min(index,records.length),0,record);
+  deletedSnapshot=null;
+  hideUndo();
+  render();
+  scheduleSave();
+  setStatus(`Eliminación de ${record.code} deshecha.`);
+};
+$('#history').addEventListener('click',e=>{
+  const del=e.target.closest('[data-delete-id]');
+  if(del){
+    deleteRecordById(del.dataset.deleteId);
+    return;
+  }
+  const img=e.target.closest('[data-photo-id]');
+  if(!img)return;
+  const r=records.find(x=>x.id===img.dataset.photoId);
+  if(r?.photo)openPhoto(r.photo);
+});
 $('#closePhotoModal').onclick=closePhoto;
 $('#photoModal').addEventListener('click',e=>{if(e.target.id==='photoModal')closePhoto()});
 $('#removeExcel').onclick=removeSelectedExcel;
-$('#clearHistory').onclick=()=>{records.length=0;currentCode='';currentRecordId=null;lastAccepted='';clearAmbiguity();render();$('#value').textContent='Sin lectura';$('#meta').textContent='Carga los Excel y apunta hacia un código.';$('#sample').disabled=true;$('#sample').textContent='📷 Muestra';setStatus('Histórico vaciado.');updateSummary();scheduleSave()};
+$('#clearHistory').onclick=()=>{records.length=0;currentCode='';currentRecordId=null;lastAccepted='';deletedSnapshot=null;hideUndo();clearAmbiguity();render();$('#value').textContent='Sin lectura';$('#meta').textContent='Carga los Excel y apunta hacia un código.';$('#sample').disabled=true;$('#sample').textContent='📷 Muestra';setStatus('Histórico vaciado.');updateSummary();scheduleSave()};
 window.addEventListener('pagehide',()=>{saveSessionNow();stop()});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveSessionNow()});
 window.addEventListener('beforeunload',saveSessionNow);
