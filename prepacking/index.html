@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<title>Scanner Experimental v0.3.4-beta3</title>
+<title>Scanner Experimental v0.3.4-beta4</title>
 <style>
 :root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -28,7 +28,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 .item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;align-items:center;padding:11px 12px;border-bottom:1px solid rgba(49,86,111,.6);font-variant-numeric:tabular-nums;min-height:66px}.item:last-child{border-bottom:0}
 .item.sampled{background:rgba(255,207,92,.14);box-shadow:inset 4px 0 0 var(--sample)}.item.found{box-shadow:inset 4px 0 0 var(--ok)}.item.notfound{box-shadow:inset 4px 0 0 var(--bad)}
 .itemMain{min-width:0}.code{display:block;font-size:21px;line-height:1.05;font-weight:850;letter-spacing:.2px;word-break:break-all}.key{display:block;margin-top:5px;color:#e7f1f8;font-size:14px;font-weight:750;word-break:break-word}
-.itemState{margin-top:4px;color:var(--muted);font-size:11px;font-weight:650}.thumb{width:62px;height:62px;border-radius:9px;object-fit:cover;border:2px solid rgba(255,255,255,.8);background:#08131c}.sampleMark{color:var(--sample)}
+.itemState{margin-top:4px;color:var(--muted);font-size:11px;font-weight:650}.refLine{display:block;margin-top:4px;color:#cfe7f7;font-size:12px;font-weight:700}.thumb{width:62px;height:62px;border-radius:9px;object-fit:cover;border:2px solid rgba(255,255,255,.8);background:#08131c}.sampleMark{color:var(--sample)}
 .photoModal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;padding:16px}.photoModal.open{display:flex}.photoModal img{max-width:96vw;max-height:88vh;border-radius:12px}.photoModal button{position:absolute;top:18px;right:18px;background:#183e5d}
 .flash{animation:flash .35s}@keyframes flash{50%{box-shadow:inset 0 0 0 6px var(--ok)}}@media(min-width:800px){.app{max-width:720px;margin:auto;border-inline:1px solid #244761}}
 
@@ -61,7 +61,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.3.4-beta3</h1><small>Nativo · índice completo · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<header><div><h1>Scanner Experimental v0.3.4-beta4</h1><small>Nativo · ceros equivalentes · referencias · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
 <main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
 <section class="controls">
   <div class="row">
@@ -77,6 +77,12 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
       placeholder="Clave: 362f7627cnsMX"
       autocomplete="off" autocapitalize="off" spellcheck="false" disabled>
   </div>
+  <div class="row">
+    <select id="referenceColumn" class="grow" disabled>
+      <option value="">Referencia/Partida: ninguna</option>
+    </select>
+  </div>
+  <div class="meta" id="referenceInfo">Opcional: selecciona la columna que contiene Referencia / Partida / Entrega. Se admite valor repetido o escrito una sola vez y continuado hacia abajo.</div>
   <div class="meta" id="excelInfo">Carga uno o varios Excel. Se indexarán automáticamente todas sus hojas.</div>
   <div class="sessionSummary">
     <div class="summaryCard"><strong id="activeServices">0</strong><span>Excel activos</span></div>
@@ -182,11 +188,15 @@ function render(){
   if(!shown.length){h.innerHTML='<div class="empty">No hay registros para este filtro.</div>';updateSummary();return}
   h.innerHTML=shown.map(r=>{
     const state=r.sample?'📷 MUESTRA':r.found===true?'✓ Coincidencia':r.found===false?'✕ No encontrado':'';
+    const extra=[];
+    if(r.reference)extra.push(`Ref.: ${escapeHtml(r.reference)}`);
+    if(r.equivalent&&r.matchedCode&&r.matchedCode!==r.code)extra.push(`Packing: ${escapeHtml(r.matchedCode)}`);
     const thumb=r.photo?`<img class="thumb" src="${r.photo}" alt="Muestra ${escapeHtml(r.code)}" data-photo-id="${r.id}">`:'';
     return `<div class="item ${r.sample?'sampled':r.found===true?'found':r.found===false?'notfound':''}" data-id="${r.id}">
       <div class="itemMain">
         <span class="code">${escapeHtml(r.code)}</span>
         <span class="key">${escapeHtml(r.key)}</span>
+        ${extra.length?`<span class="refLine">${extra.join(' · ')}</span>`:''}
         <span class="itemState ${r.sample?'sampleMark':''}">${state}</span>
       </div>
       <div class="itemActions">
@@ -205,6 +215,18 @@ function normalizeCode(v){
     .toUpperCase()
     .replace(/[\s\-_.\/]+/g,'')
     .replace(/[^A-Z0-9]/g,'');
+}
+
+function plainIntegerAlias(v){
+  const raw=String(v ?? '').trim();
+  if(!/^\d+$/.test(raw))return null;
+  const stripped=raw.replace(/^0+(?=\d)/,'');
+  return stripped||'0';
+}
+function excelColumnName(index){
+  let n=Number(index)+1,s='';
+  while(n>0){const r=(n-1)%26;s=String.fromCharCode(65+r)+s;n=Math.floor((n-1)/26)}
+  return s;
 }
 function verifyManual(){
   const input=$('#manualCode');
@@ -266,7 +288,7 @@ function processScannerFrame(found){
 
   // Los códigos presentes en algún Excel requieren 2 frames concordantes.
   // Los no encontrados requieren 3 para reducir falsos "No coincidente".
-  const threshold=globalIndex.has(code)?2:3;
+  const threshold=hasAnyMatch(code)?2:3;
   setStatus(`Confirmando ${code} · ${scanCandidateCount}/${threshold}`);
   if(scanCandidateCount<threshold)return;
 
@@ -294,30 +316,98 @@ async function stop(){running=false;clearTimeout(timer);detectorPaused=false;res
 async function start(){if(!services.length){setStatus('Carga al menos un Excel antes de iniciar la cámara.');return}await stop();setStatus('Solicitando cámara trasera…');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});video.srcObject=stream;await video.play();track=stream.getVideoTracks()[0];const n=await setupDetector();running=true;detectorPaused=false;resetScanConfirmation();lockedScanCode='';lockedMissingFrames=0;capabilities();badge.textContent='Motor nativo';$('#start').textContent='Detener';setStatus(`${track.label||'Cámara trasera'} · ${n} formatos · ${readMode==='single'?'una lectura':'continuo'}`);loop()}catch(e){running=false;badge.textContent='Error';setStatus('No se pudo iniciar: '+e.message)}}
 
 
-let globalIndex=new Map(),pendingCode='',pendingMatches=[];
+let globalIndex=new Map(),zeroAliasIndex=new Map(),pendingCode='',pendingMatches=[];
+
+function detectReferenceColumns(rowsBySheet){
+  let maxCols=0;
+  const labels=new Map();
+  const likely=/\b(ref|referencia|reference|partida|entrega|lote|pedido|orden|order|booking)\b/i;
+  for(const {rows} of rowsBySheet){
+    for(const row of rows)maxCols=Math.max(maxCols,Array.isArray(row)?row.length:0);
+    const limit=Math.min(rows.length,25);
+    for(let r=0;r<limit;r++){
+      const row=rows[r]||[];
+      for(let c=0;c<row.length;c++){
+        const raw=String(row[c]??'').trim();
+        if(!raw)continue;
+        if(likely.test(raw)&&!labels.has(c))labels.set(c,raw.slice(0,40));
+      }
+    }
+  }
+  const out=[];
+  for(let c=0;c<maxCols;c++)out.push({index:c,label:labels.get(c)||''});
+  return out;
+}
 
 function indexWorkbook(workbook){
   const codes=new Set();
+  const numericAliases=new Map();
+  const rowsBySheet=[];
   for(const sheetName of workbook.SheetNames){
     const sheet=workbook.Sheets[sheetName];
     const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:'',raw:false,blankrows:false});
+    rowsBySheet.push({sheetName,rows});
     for(const row of rows){
       if(!Array.isArray(row))continue;
       for(const cell of row){
         const code=normalizeCode(cell);
         if(code)codes.add(code);
+        const alias=plainIntegerAlias(cell);
+        if(alias&&code){
+          if(!numericAliases.has(alias))numericAliases.set(alias,new Set());
+          numericAliases.get(alias).add(code);
+        }
       }
     }
   }
-  return codes;
+  return {codes,numericAliases,rowsBySheet,referenceColumns:detectReferenceColumns(rowsBySheet)};
+}
+
+function buildReferenceMap(service){
+  const map=new Map();
+  if(service.referenceColumnIndex===null||service.referenceColumnIndex===undefined||!service.rowsBySheet)return map;
+  const col=Number(service.referenceColumnIndex);
+  for(const {rows} of service.rowsBySheet){
+    let currentRef='';
+    for(const row of rows){
+      if(!Array.isArray(row))continue;
+      const rawRef=String(row[col]??'').trim();
+      if(rawRef)currentRef=rawRef;
+      if(!currentRef)continue;
+      for(const cell of row){
+        const code=normalizeCode(cell);
+        if(!code)continue;
+        if(!map.has(code))map.set(code,new Set());
+        map.get(code).add(currentRef);
+      }
+    }
+  }
+  return map;
+}
+
+function refsFor(serviceIndex,matchedCode){
+  const s=services[serviceIndex];
+  if(!s||!s.referenceMap)return '';
+  const refs=s.referenceMap.get(matchedCode);
+  if(!refs||!refs.size)return '';
+  return [...refs].join(' / ');
 }
 
 function rebuildGlobalIndex(){
   globalIndex=new Map();
+  zeroAliasIndex=new Map();
   services.forEach((service,serviceIndex)=>{
     for(const code of service.codes){
       if(!globalIndex.has(code))globalIndex.set(code,new Set());
       globalIndex.get(code).add(serviceIndex);
+    }
+    for(const [alias,codes] of (service.numericAliases||new Map())){
+      if(!zeroAliasIndex.has(alias))zeroAliasIndex.set(alias,new Map());
+      const bucket=zeroAliasIndex.get(alias);
+      for(const code of codes){
+        const token=`${serviceIndex}|${code}`;
+        if(!bucket.has(token))bucket.set(token,{serviceIndex,matchedCode:code,equivalent:true});
+      }
     }
   });
   const ambiguous=[...globalIndex.values()].filter(set=>set.size>1).length;
@@ -325,6 +415,40 @@ function rebuildGlobalIndex(){
   $('#excelInfo').textContent=services.length
     ? `${services.length} servicio(s) · ${totalValues} valores únicos indexados${ambiguous?` · ${ambiguous} valores presentes en más de un Excel`:''}.`
     : 'Carga uno o varios Excel. Se indexarán automáticamente todas sus hojas.';
+}
+
+function getMatchCandidates(code){
+  const exact=globalIndex.get(code);
+  if(exact&&exact.size)return [...exact].map(serviceIndex=>({serviceIndex,matchedCode:code,equivalent:false}));
+  if(!/^\d+$/.test(code))return [];
+  const alias=plainIntegerAlias(code);
+  if(alias===null)return [];
+  const bucket=zeroAliasIndex.get(alias);
+  if(!bucket)return [];
+  return [...bucket.values()];
+}
+function hasAnyMatch(code){return getMatchCandidates(code).length>0}
+
+function renderReferenceSelect(){
+  const sel=$('#referenceColumn');
+  const i=selectedServiceIndex();
+  if(i<0||!services[i]){
+    sel.innerHTML='<option value="">Referencia/Partida: ninguna</option>';
+    sel.disabled=true;
+    return;
+  }
+  const s=services[i];
+  const opts=['<option value="">Referencia/Partida: ninguna</option>'];
+  for(const c of (s.referenceColumns||[])){
+    const label=c.label?` · ${escapeHtml(c.label)}`:'';
+    opts.push(`<option value="${c.index}">${excelColumnName(c.index)}${label}</option>`);
+  }
+  sel.innerHTML=opts.join('');
+  sel.value=s.referenceColumnIndex===null||s.referenceColumnIndex===undefined?'':String(s.referenceColumnIndex);
+  sel.disabled=!s.workbook;
+  $('#referenceInfo').textContent=s.workbook
+    ? 'Opcional: el valor puede repetirse en cada fila o aparecer una sola vez; en este último caso se continúa hacia abajo hasta la siguiente referencia.'
+    : 'Servicio restaurado. La referencia guardada se conserva; para cambiar de columna, vuelve a cargar ese Excel.';
 }
 
 function renderServiceSelect(){
@@ -336,6 +460,7 @@ function renderServiceSelect(){
     $('#serviceKey').disabled=true;
     $('#fileCount').textContent='0 archivos';
     rebuildGlobalIndex();
+    renderReferenceSelect();
     return;
   }
   const previous=Number(select.value);
@@ -347,6 +472,7 @@ function renderServiceSelect(){
   $('#serviceKey').value=services[target].key;
   $('#fileCount').textContent=`${services.length} archivo${services.length===1?'':'s'}`;
   rebuildGlobalIndex();
+  renderReferenceSelect();
   updateSummary();
 }
 
@@ -365,15 +491,25 @@ function newRecordId(){
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function addResolvedRecord(code,serviceIndex,found=true){
-  const service=services[serviceIndex];
+function recordMetaText(rec,prefix='Encontrado'){
+  const parts=[prefix,rec.key];
+  if(rec.reference)parts.push(`Ref. ${rec.reference}`);
+  if(rec.equivalent&&rec.matchedCode&&rec.matchedCode!==rec.code)parts.push(`Packing ${rec.matchedCode}`);
+  return parts.filter(Boolean).join(' · ');
+}
+function addResolvedRecord(code,candidate,found=true){
+  const service=services[candidate.serviceIndex];
   const key=service?service.key:'NO ENCONTRADO';
+  const reference=found?refsFor(candidate.serviceIndex,candidate.matchedCode):'';
   currentCode=code;
-  const rec={id:newRecordId(),code,key,serviceId:service?.serviceId||null,sample:false,found,photo:null};
+  const rec={
+    id:newRecordId(),code,key,serviceId:service?.serviceId||null,sample:false,found,photo:null,
+    matchedCode:candidate.matchedCode||code,equivalent:Boolean(candidate.equivalent),reference
+  };
   records.unshift(rec);
   currentRecordId=rec.id;
   $('#value').textContent=code;
-  $('#meta').textContent=found?`Encontrado · ${key}`:'No encontrado en la sesión';
+  $('#meta').textContent=found?recordMetaText(rec):'No encontrado en la sesión';
   $('#sample').disabled=false;
   $('#sample').textContent='📷 Muestra';
   render();
@@ -384,14 +520,15 @@ function addResolvedRecord(code,serviceIndex,found=true){
   $('#viewer').classList.add('flash');
 }
 
-function resolveAmbiguity(serviceIndex){
-  if(!pendingCode||!services[serviceIndex])return;
+function resolveAmbiguity(matchIndex){
+  const candidate=pendingMatches[matchIndex];
+  if(!pendingCode||!candidate||!services[candidate.serviceIndex])return;
   const code=pendingCode;
   clearAmbiguity();
-  addResolvedRecord(code,serviceIndex,true);
-  setStatus(`Código asociado a ${services[serviceIndex].key}.`);
+  addResolvedRecord(code,candidate,true);
+  const svc=services[candidate.serviceIndex];
+  setStatus(`Código asociado a ${svc.key}${candidate.equivalent?` mediante equivalencia de ceros (${candidate.matchedCode})`:''}.`);
 }
-
 
 function existingPhysicalRecord(code){
   const n=normalizeCode(code);
@@ -400,7 +537,7 @@ function existingPhysicalRecord(code){
 function focusExistingRecord(r){
   currentCode=r.code;currentRecordId=r.id;
   $('#value').textContent=r.code;
-  $('#meta').textContent=r.found===true?`Ya registrado · Coincidente · ${r.key}`:'Ya registrado · No coincidente';
+  $('#meta').textContent=r.found===true?recordMetaText(r,'Ya registrado · Coincidente'):'Ya registrado · No coincidente';
   $('#sample').disabled=false;
   setStatus('Código físico ya registrado en Prepacking; no se duplicó.');
 }
@@ -412,15 +549,22 @@ function accept(code){
   }
   const normalized=normalizeCode(code);
   if(!normalized)return;
+  const candidates=getMatchCandidates(normalized);
+
   if(prepackMode){
     const existing=existingPhysicalRecord(normalized);
     if(existing){
-      const newMatches=globalIndex.get(normalized);
-      if(existing.found===false&&newMatches&&newMatches.size===1){
-        const i=[...newMatches][0],svc=services[i];
-        existing.found=true;existing.serviceId=svc.serviceId;existing.key=svc.key;
+      if(existing.found===false&&candidates.length===1){
+        const c=candidates[0],svc=services[c.serviceIndex];
+        existing.found=true;
+        existing.serviceId=svc.serviceId;
+        existing.key=svc.key;
+        existing.matchedCode=c.matchedCode;
+        existing.equivalent=Boolean(c.equivalent);
+        existing.reference=refsFor(c.serviceIndex,c.matchedCode);
         render();scheduleSave();
-        $('#value').textContent=normalized;$('#meta').textContent=`Actualizado · Coincidente · ${svc.key}`;
+        $('#value').textContent=normalized;
+        $('#meta').textContent=recordMetaText(existing,'Actualizado · Coincidente');
         setStatus('El código antes no coincidente ahora fue encontrado en un Excel activo.');
         beep();
         return;
@@ -434,13 +578,10 @@ function accept(code){
   lastAccepted=normalized;
   lastAt=now;
 
-  const matchSet=globalIndex.get(normalized);
-  const matches=matchSet?[...matchSet]:[];
-
-  if(matches.length===0){
+  if(candidates.length===0){
     clearAmbiguity();
     currentCode=normalized;
-    const rec={id:newRecordId(),code:normalized,key:'NO ENCONTRADO',serviceId:null,sample:false,found:false,photo:null};
+    const rec={id:newRecordId(),code:normalized,key:'NO ENCONTRADO',serviceId:null,sample:false,found:false,photo:null,matchedCode:null,equivalent:false,reference:''};
     records.unshift(rec);
     currentRecordId=rec.id;
     $('#value').textContent=normalized;
@@ -456,30 +597,39 @@ function accept(code){
     return;
   }
 
-  if(matches.length===1){
+  if(candidates.length===1){
     clearAmbiguity();
-    addResolvedRecord(normalized,matches[0],true);
+    addResolvedRecord(normalized,candidates[0],true);
+    if(candidates[0].equivalent&&candidates[0].matchedCode!==normalized){
+      setStatus(`Coincidencia por equivalencia de ceros: ${normalized} ↔ ${candidates[0].matchedCode}.`);
+    }
     return;
   }
 
   currentCode='';
   currentRecordId=null;
   pendingCode=normalized;
-  pendingMatches=matches;
+  pendingMatches=candidates;
   $('#value').textContent=normalized;
-  $('#meta').textContent=`Encontrado en ${matches.length} inspecciones`;
+  $('#meta').textContent=`Encontrado en ${candidates.length} coincidencias posibles`;
   $('#sample').disabled=true;
   $('#ambiguity').hidden=false;
-  $('#ambiguityText').textContent=`${normalized} aparece en: ${matches.map(i=>services[i].key).join(' · ')}`;
-  $('#ambiguityButtons').innerHTML=matches.map(i=>`<button type="button" data-service-index="${i}">${escapeHtml(services[i].key)}</button>`).join('');
-  setStatus('Selecciona la inspección correcta para registrar la lectura.');
+  $('#ambiguityText').textContent=`${normalized} puede corresponder a: ${candidates.map(c=>{
+    const s=services[c.serviceIndex];
+    return `${s.key} · ${c.matchedCode}${c.equivalent?' (ceros equivalentes)':''}`;
+  }).join(' · ')}`;
+  $('#ambiguityButtons').innerHTML=candidates.map((c,i)=>{
+    const s=services[c.serviceIndex];
+    return `<button type="button" data-match-index="${i}">${escapeHtml(s.key)} · ${escapeHtml(c.matchedCode)}</button>`;
+  }).join('');
+  setStatus('Selecciona la coincidencia correcta para registrar la lectura.');
   beep();
 }
 
 $('#ambiguityButtons').addEventListener('click',e=>{
-  const btn=e.target.closest('button[data-service-index]');
+  const btn=e.target.closest('button[data-match-index]');
   if(!btn)return;
-  resolveAmbiguity(Number(btn.dataset.serviceIndex));
+  resolveAmbiguity(Number(btn.dataset.matchIndex));
 });
 
 
@@ -516,7 +666,7 @@ function openPhoto(photo){if(!photo)return;$('#photoModalImg').src=photo;$('#pho
 function closePhoto(){$('#photoModal').classList.remove('open');$('#photoModal').setAttribute('aria-hidden','true');$('#photoModalImg').src=''}
 
 
-const STORAGE_KEY='verificadorPacking_session_v034b3';
+const STORAGE_KEY='verificadorPacking_session_v034b4';
 let saveTimer=0;
 
 function serializableState(includePhotos=true){
@@ -530,7 +680,11 @@ function serializableState(includePhotos=true){
       serviceId:s.serviceId||newServiceId(),
       fileName:s.fileName,
       key:s.key,
-      codes:[...(s.codes||[])]
+      codes:[...(s.codes||[])],
+      numericAliases:[...(s.numericAliases||new Map())].map(([k,v])=>[k,[...v]]),
+      referenceColumnIndex:s.referenceColumnIndex??null,
+      referenceColumns:s.referenceColumns||[],
+      referenceMap:[...(s.referenceMap||new Map())].map(([k,v])=>[k,[...v]])
     })),
     records:records.map(r=>({
       id:r.id,
@@ -539,6 +693,9 @@ function serializableState(includePhotos=true){
       serviceId:r.serviceId||null,
       sample:Boolean(r.sample),
       found:r.found,
+      matchedCode:r.matchedCode||null,
+      equivalent:Boolean(r.equivalent),
+      reference:r.reference||'',
       photo:includePhotos?(r.photo||null):null
     }))
   };
@@ -567,7 +724,7 @@ function scheduleSave(){
 }
 
 function restoreSession(){
-  const raw=localStorage.getItem(STORAGE_KEY)||localStorage.getItem('verificadorPacking_session_v034b1')||localStorage.getItem('verificadorPacking_session_v032');
+  const raw=localStorage.getItem(STORAGE_KEY)||localStorage.getItem('verificadorPacking_session_v034b3')||localStorage.getItem('verificadorPacking_session_v034b1')||localStorage.getItem('verificadorPacking_session_v032');
   if(!raw)return false;
   try{
     const state=JSON.parse(raw);
@@ -588,7 +745,12 @@ function restoreSession(){
       fileName:s.fileName||'Excel restaurado',
       key:s.key||'',
       workbook:null,
-      codes:new Set(Array.isArray(s.codes)?s.codes:[])
+      rowsBySheet:null,
+      codes:new Set(Array.isArray(s.codes)?s.codes:[]),
+      numericAliases:new Map((s.numericAliases||[]).map(([k,v])=>[k,new Set(v||[])])),
+      referenceColumnIndex:s.referenceColumnIndex??null,
+      referenceColumns:Array.isArray(s.referenceColumns)?s.referenceColumns:[],
+      referenceMap:new Map((s.referenceMap||[]).map(([k,v])=>[k,new Set(v||[])]))
     }));
 
     records.length=0;
@@ -600,6 +762,9 @@ function restoreSession(){
         serviceId:r.serviceId||null,
         sample:Boolean(r.sample),
         found:r.found,
+        matchedCode:r.matchedCode||null,
+        equivalent:Boolean(r.equivalent),
+        reference:r.reference||'',
         photo:r.photo||null
       });
     }
@@ -646,13 +811,18 @@ $('#excelFiles').addEventListener('change',async function(){
     try{
       const buffer=await readFileAsArrayBuffer(file);
       const workbook=XLSX.read(buffer,{type:'array',cellDates:false});
-      const codes=indexWorkbook(workbook);
+      const indexed=indexWorkbook(workbook);
       services.push({
         serviceId:newServiceId(),
         fileName:file.name,
         key:file.name.replace(/\.[^.]+$/,''),
         workbook,
-        codes
+        rowsBySheet:indexed.rowsBySheet,
+        codes:indexed.codes,
+        numericAliases:indexed.numericAliases,
+        referenceColumnIndex:null,
+        referenceColumns:indexed.referenceColumns,
+        referenceMap:new Map()
       });
       loaded++;
     }catch(error){
@@ -670,7 +840,8 @@ $('#serviceSelect').addEventListener('change',function(){
   const i=Number(this.value);
   if(!Number.isInteger(i)||!services[i])return;
   $('#serviceKey').value=services[i].key;
-  setStatus(`Servicio seleccionado para editar clave: ${services[i].key}`);
+  renderReferenceSelect();
+  setStatus(`Servicio seleccionado: ${services[i].key}`);
 });
 
 $('#serviceKey').addEventListener('input',function(){
@@ -685,6 +856,28 @@ $('#serviceKey').addEventListener('input',function(){
   scheduleSave();
 });
 
+$('#referenceColumn').addEventListener('change',function(){
+  const i=selectedServiceIndex();
+  if(i<0||!services[i])return;
+  const service=services[i];
+  if(!service.workbook||!service.rowsBySheet){
+    setStatus('Para cambiar la columna de referencia en un servicio restaurado, vuelve a cargar el Excel.');
+    renderReferenceSelect();
+    return;
+  }
+  service.referenceColumnIndex=this.value===''?null:Number(this.value);
+  service.referenceMap=buildReferenceMap(service);
+  for(const r of records){
+    if(r.serviceId===service.serviceId&&r.found===true&&r.matchedCode){
+      r.reference=refsFor(i,r.matchedCode);
+    }
+  }
+  render();
+  scheduleSave();
+  const label=this.value===''?'sin columna de referencia':`columna ${excelColumnName(Number(this.value))}`;
+  setStatus(`Referencia actualizada para ${service.key}: ${label}.`);
+});
+
 
 function safeSheetName(s){return String(s||'Prepacking').replace(/[\\/?*\[\]:]/g,' ').slice(0,31)||'Prepacking'}
 function exportPrepacking(){
@@ -695,12 +888,12 @@ function exportPrepacking(){
   const fmt=$('#exportFormat').value;
   const found=data.filter(r=>r.found===true),notfound=data.filter(r=>r.found===false);
   if(fmt==='twoSheets'){
-    const a=found.map(r=>({Codigo:r.code,Servicio:r.key||''}));
-    const b=notfound.map(r=>({Codigo:r.code,Servicio:''}));
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(a.length?a:[{Codigo:'',Servicio:''}]),'Coincidentes');
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(b.length?b:[{Codigo:'',Servicio:''}]),'No coincidentes');
+    const a=found.map(r=>({'Codigo fisico':r.code,'Codigo Packing':r.matchedCode||r.code,Referencia:r.reference||'',Servicio:r.key||''}));
+    const b=notfound.map(r=>({'Codigo fisico':r.code,'Codigo Packing':'',Referencia:'',Servicio:''}));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(a.length?a:[{'Codigo fisico':'','Codigo Packing':'',Referencia:'',Servicio:''}]),'Coincidentes');
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(b.length?b:[{'Codigo fisico':'','Codigo Packing':'',Referencia:'',Servicio:''}]),'No coincidentes');
   }else if(fmt==='conditionColumn'){
-    const rows=data.map(r=>({Codigo:r.code,Condicion:r.found===true?'Coincidente':'No coincidente',Servicio:r.found===true?(r.key||''):''}));
+    const rows=data.map(r=>({'Codigo fisico':r.code,'Codigo Packing':r.found===true?(r.matchedCode||r.code):'',Condicion:r.found===true?'Coincidente':'No coincidente',Referencia:r.reference||'',Servicio:r.found===true?(r.key||''):''}));
     XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Prepacking');
   }else{
     const n=Math.max(found.length,notfound.length),rows=[];
