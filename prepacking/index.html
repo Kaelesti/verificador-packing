@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<title>Scanner Experimental v0.3.4-beta4</title>
+<title>Scanner Experimental v0.3.4-beta4a</title>
 <style>
 :root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -61,7 +61,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.3.4-beta4</h1><small>Nativo · ceros equivalentes · referencias · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<header><div><h1>Scanner Experimental v0.3.4-beta4a</h1><small>Nativo · ceros equivalentes · referencias · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
 <main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
 <section class="controls">
   <div class="row">
@@ -360,6 +360,15 @@ function indexWorkbook(workbook){
       }
     }
   }
+  // Compactar aliases: se reconstruyen desde los códigos únicos.
+  numericAliases.clear();
+  for(const code of codes){
+    if(!/^\d+$/.test(code))continue;
+    const alias=plainIntegerAlias(code);
+    if(alias===null)continue;
+    if(!numericAliases.has(alias))numericAliases.set(alias,new Set());
+    numericAliases.get(alias).add(code);
+  }
   return {codes,numericAliases,rowsBySheet,referenceColumns:detectReferenceColumns(rowsBySheet)};
 }
 
@@ -445,8 +454,8 @@ function renderReferenceSelect(){
   }
   sel.innerHTML=opts.join('');
   sel.value=s.referenceColumnIndex===null||s.referenceColumnIndex===undefined?'':String(s.referenceColumnIndex);
-  sel.disabled=!s.workbook;
-  $('#referenceInfo').textContent=s.workbook
+  sel.disabled=!s.rowsBySheet;
+  $('#referenceInfo').textContent=s.rowsBySheet
     ? 'Opcional: el valor puede repetirse en cada fila o aparecer una sola vez; en este último caso se continúa hacia abajo hasta la siguiente referencia.'
     : 'Servicio restaurado. La referencia guardada se conserva; para cambiar de columna, vuelve a cargar ese Excel.';
 }
@@ -666,7 +675,7 @@ function openPhoto(photo){if(!photo)return;$('#photoModalImg').src=photo;$('#pho
 function closePhoto(){$('#photoModal').classList.remove('open');$('#photoModal').setAttribute('aria-hidden','true');$('#photoModalImg').src=''}
 
 
-const STORAGE_KEY='verificadorPacking_session_v034b4';
+const STORAGE_KEY='verificadorPacking_session_v034b4a';
 let saveTimer=0;
 
 function serializableState(includePhotos=true){
@@ -724,7 +733,7 @@ function scheduleSave(){
 }
 
 function restoreSession(){
-  const raw=localStorage.getItem(STORAGE_KEY)||localStorage.getItem('verificadorPacking_session_v034b3')||localStorage.getItem('verificadorPacking_session_v034b1')||localStorage.getItem('verificadorPacking_session_v032');
+  const raw=localStorage.getItem(STORAGE_KEY)||localStorage.getItem('verificadorPacking_session_v034b4')||localStorage.getItem('verificadorPacking_session_v034b3')||localStorage.getItem('verificadorPacking_session_v034b1')||localStorage.getItem('verificadorPacking_session_v032');
   if(!raw)return false;
   try{
     const state=JSON.parse(raw);
@@ -816,7 +825,7 @@ $('#excelFiles').addEventListener('change',async function(){
         serviceId:newServiceId(),
         fileName:file.name,
         key:file.name.replace(/\.[^.]+$/,''),
-        workbook,
+        workbook:null,
         rowsBySheet:indexed.rowsBySheet,
         codes:indexed.codes,
         numericAliases:indexed.numericAliases,
@@ -832,7 +841,8 @@ $('#excelFiles').addEventListener('change',async function(){
   }
   renderServiceSelect();
   scheduleSave();
-  setStatus(`${loaded} archivo(s) indexado(s). Ya puedes verificar códigos.`);
+  if(loaded>0)setStatus(`${loaded} archivo(s) indexado(s). Ya puedes verificar códigos.`);
+  else setStatus('No se pudo indexar ningún Excel. La versión beta4a conserva menos datos en memoria para mejorar compatibilidad móvil.');
   this.value='';
 });
 
@@ -860,7 +870,7 @@ $('#referenceColumn').addEventListener('change',function(){
   const i=selectedServiceIndex();
   if(i<0||!services[i])return;
   const service=services[i];
-  if(!service.workbook||!service.rowsBySheet){
+  if(!service.rowsBySheet){
     setStatus('Para cambiar la columna de referencia en un servicio restaurado, vuelve a cargar el Excel.');
     renderReferenceSelect();
     return;
