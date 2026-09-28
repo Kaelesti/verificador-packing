@@ -6,18 +6,18 @@
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<title>Scanner Experimental v0.3.4-beta4b</title>
+<title>Scanner Experimental v0.3.4-beta4c</title>
 <style>
 :root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-body{overflow:hidden}.app{height:100%;display:grid;grid-template-rows:auto minmax(210px,1fr) auto}
+body{overflow:hidden}.app{height:100%;display:grid;grid-template-rows:auto minmax(210px,1fr) auto auto}
 header{padding:10px 14px;background:linear-gradient(180deg,#102a43,#0b2135);display:flex;align-items:center;justify-content:space-between;gap:10px}
 header h1{font-size:17px;margin:0}header small{display:block;color:var(--muted)}.badge{font-size:12px;padding:5px 8px;border-radius:999px;background:#183e5d;color:var(--muted);white-space:nowrap}
 .viewer{position:relative;background:#000;min-height:0;overflow:hidden}video{width:100%;height:100%;object-fit:cover;background:#000}
 .overlay{position:absolute;inset:0;pointer-events:none}.scanbox{position:absolute;left:7%;right:7%;height:23%;top:50%;transform:translateY(-50%);border:2px solid #fff;border-radius:14px;box-shadow:0 0 18px rgba(255,255,255,.15)}
 .scanline{position:absolute;left:5%;right:5%;top:50%;height:2px;background:linear-gradient(90deg,transparent,var(--ok),transparent);box-shadow:0 0 8px var(--ok);animation:sweep 1.4s ease-in-out infinite alternate}
 @keyframes sweep{from{transform:translateY(-38px)}to{transform:translateY(38px)}}
-.controls{background:var(--panel2);padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:grid;gap:8px;max-height:52vh;overflow:auto}.precisionPanel{display:grid;gap:7px;padding-bottom:2px}.zoomPanel{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;align-items:center;padding:2px 2px 0}.zoomPanel label{white-space:nowrap;font-size:13px}.zoomPanel input[type=range]{min-width:0}
+.controls{background:var(--panel2);padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:grid;gap:8px;max-height:52vh;overflow:auto}.precisionPanel{background:var(--panel2);display:grid;gap:7px;padding:8px 10px 6px;border-bottom:1px solid var(--line)}.zoomPanel{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;align-items:center;padding:2px 2px 0}.zoomPanel label{white-space:nowrap;font-size:13px}.zoomPanel input[type=range]{min-width:0}
 .row{display:flex;gap:7px;align-items:center}.grow{flex:1;min-width:0}button,input{font:inherit}
 button{border:0;border-radius:11px;background:#183e5d;color:white;padding:10px 12px;font-weight:650}button.primary{background:#1a73e8}button.sample{background:#7a651f}button.active{outline:2px solid #d8edff;background:#245777}button:disabled{opacity:.45}
 input[type=text],select{width:100%;background:#132f49;color:white;border:1px solid #345a75;border-radius:9px;padding:10px}input[type=file]{display:none}input[type=range]{width:100%}
@@ -61,17 +61,16 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.3.4-beta4b</h1><small>Nativo · ceros equivalentes · referencias · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<header><div><h1>Scanner Experimental v0.3.4-beta4c</h1><small>Nativo · ceros equivalentes · referencias · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
 <main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
-<section class="controls">
-  <div class="precisionPanel">
-    <div class="zoomPanel">
-      <label>Zoom: <span id="zoomValue">1.0×</span></label>
-      <input id="zoom" type="range" min="1" max="1" step="0.1" value="1" disabled>
-    </div>
-    <div class="result"><strong id="value">Sin lectura</strong><div class="meta" id="meta">Carga los Excel y apunta hacia un código.</div></div>
+<section class="precisionPanel">
+  <div class="zoomPanel">
+    <label>Zoom: <span id="zoomValue">1.0×</span></label>
+    <input id="zoom" type="range" min="1" max="1" step="0.1" value="1" disabled>
   </div>
-
+  <div class="result"><strong id="value">Sin lectura</strong><div class="meta" id="meta">Carga los Excel y apunta hacia un código.</div></div>
+</section>
+<section class="controls">
   <div class="row">
     <label class="fileBtn grow" for="excelFiles">Agregar Excel</label>
     <input id="excelFiles" type="file" accept=".xlsx,.xls,.xlsm" multiple>
