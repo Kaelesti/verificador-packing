@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<title>Scanner Experimental v0.3.5-beta2</title>
+<title>Scanner Experimental v0.3.5-beta3</title>
 <style>
 :root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -66,6 +66,8 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 .pkDetails{margin-top:7px;grid-column:1/-1;min-width:0}
 .pkDetails summary{cursor:pointer;font-size:12.5px;font-weight:700;color:#9fd3ff;padding:4px 0}
 .pkDetails .pkGroup{margin-top:6px}
+.ambOption{display:grid;gap:6px;width:100%;min-width:0;padding-bottom:8px;border-bottom:1px dashed #31566f}
+.ambOption:last-child{border-bottom:0}
 
 @media(max-width:799px){
   html,body{height:auto;min-height:100%}
@@ -80,7 +82,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.3.5-beta2</h1><small>Nativo · filas del packing · referencias · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<header><div><h1>Scanner Experimental v0.3.5-beta3</h1><small>Nativo · filas del packing · referencias · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
 <main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
 <section class="precisionPanel">
   <div class="zoomPanel">
@@ -590,17 +592,37 @@ function sheetIndexFor(service){
   service._sheetIdx=idx;
   return idx;
 }
-// Si un código aparece en más de una hoja del mismo Excel (p. ej. packing
-// de la inspección + packing base), cada hoja se ofrece como una coincidencia
-// distinta y se usa el mismo aviso de "código duplicado" para elegir.
+// Comparación de la información de un código entre hojas: se comparan los
+// valores de sus filas sin importar el orden de las columnas ni de las filas,
+// y tratando 3,2 / 3.20 / 3.2 como el mismo número.
+function normVal(v){
+  let t=cellText(v).toLowerCase().replace(/\s+/g,' ');
+  if(/^-?\d+([.,]\d+)?$/.test(t)){const n=parseFloat(t.replace(',','.'));if(Number.isFinite(n))t=String(n)}
+  return t;
+}
+function detailsFingerprint(details){
+  // La columna del código se excluye: en una hoja puede venir en cada fila y en
+  // otra solo en la primera (filas de continuación con la celda vacía).
+  return (details||[]).flatMap(g=>g.rows.map(r=>r.v.filter((v,i)=>!g.cols[i]?.code).map(normVal).filter(Boolean).sort().join('|'))).sort().join('\n');
+}
+// Código en más de una hoja del mismo Excel:
+//  - misma información en todas  -> una sola coincidencia, sin aviso;
+//  - información distinta        -> una opción por versión distinta, y se usa
+//    el aviso de "código duplicado" (igual que entre Excel diferentes).
 function getMatchCandidates(code){
   const out=[];
   for(const c of baseMatchCandidates(code)){
     const svc=services[c.serviceIndex];
     const sheets=sheetIndexFor(svc)?.get(c.matchedCode);
-    if(sheets&&sheets.size>1){
-      for(const si of sheets)out.push({...c,sheet:svc.rowsBySheet[si].sheetName});
-    }else out.push(c);
+    if(!sheets||sheets.size<2){out.push(c);continue}
+    const versions=new Map(); // huella -> hojas
+    for(const si of sheets){
+      const name=svc.rowsBySheet[si].sheetName;
+      const fp=detailsFingerprint(findPackingDetails(svc,c.matchedCode,name));
+      if(!versions.has(fp))versions.set(fp,[]);
+      versions.get(fp).push(name);
+    }
+    for(const names of versions.values())out.push({...c,sheet:names[0],sameSheets:names});
   }
   return out;
 }
@@ -610,7 +632,8 @@ function candidateLabel(c){
   const parts=[s?.key||s?.fileName||'Excel'];
   if(c.sheet){
     const n=packingRowCount(findPackingDetails(s,c.matchedCode,c.sheet));
-    parts.push(`hoja ${c.sheet}${n?` (${n} fila${n===1?'':'s'})`:''}`);
+    const names=c.sameSheets&&c.sameSheets.length>1?c.sameSheets.join(' = '):c.sheet;
+    parts.push(`hoja ${names}${n?` (${n} fila${n===1?'':'s'})`:''}`);
   }
   parts.push(c.matchedCode+(c.equivalent?' (ceros equivalentes)':''));
   return parts.join(' · ');
@@ -811,10 +834,14 @@ function accept(code){
   $('#sample').disabled=true;
   showPackingDetail(null);
   $('#ambiguity').hidden=false;
-  $('#ambiguityText').textContent=`${normalized} aparece en ${candidates.length} lugares. Elige el que corresponde al packing de la inspección:`;
-  $('#ambiguityButtons').innerHTML=candidates.map((c,i)=>
-    `<button type="button" data-match-index="${i}">${escapeHtml(candidateLabel(c))}</button>`
-  ).join('');
+  const sameExcel=candidates.every(c=>c.serviceIndex===candidates[0].serviceIndex);
+  $('#ambiguityText').textContent=sameExcel
+    ? `${normalized} aparece en ${candidates.length} hojas del mismo Excel con información distinta. Compara y elige la que corresponde al packing de la inspección:`
+    : `${normalized} aparece en ${candidates.length} lugares. Elige el que corresponde al packing de la inspección:`;
+  $('#ambiguityButtons').innerHTML=candidates.map((c,i)=>{
+    const det=detailsForCandidate(c);
+    return `<div class="ambOption"><button type="button" data-match-index="${i}">${escapeHtml(candidateLabel(c))}</button>${det&&det.length?detailsTablesHtml(det):''}</div>`;
+  }).join('');
   setStatus('Selecciona la coincidencia correcta para registrar la lectura.');
   beep();
 }
