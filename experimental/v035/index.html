@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<title>Scanner Experimental v0.3.5-beta3</title>
+<title>Scanner Experimental v0.3.5-beta4</title>
 <style>
 :root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -82,7 +82,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.3.5-beta3</h1><small>Nativo · filas del packing · referencias · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<header><div><h1>Scanner Experimental v0.3.5-beta4</h1><small>Nativo · filas del packing · referencias · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
 <main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
 <section class="precisionPanel">
   <div class="zoomPanel">
@@ -136,6 +136,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
     </select>
     <button id="exportPrepacking" disabled>⬇ Excel</button>
   </div>
+  <div class="row"><button id="exportMarked" class="grow" disabled>⬇ Packing marcado (Excel seleccionado)</button></div>
   <div id="ambiguity" class="result" hidden>
     <strong>⚠ Código duplicado en la sesión</strong>
     <div class="meta" id="ambiguityText"></div>
@@ -205,6 +206,7 @@ function updateSummary(){
   $('#ppFound').textContent=found;
   $('#ppNotFound').textContent=notfound;
   $('#exportPrepacking').disabled=phys.length===0;
+  $('#exportMarked').disabled=services.length===0;
 }
 function beep(){try{const C=window.AudioContext||window.webkitAudioContext,c=new C(),o=c.createOscillator(),g=c.createGain();o.type='square';o.frequency.setValueAtTime(2400,c.currentTime);g.gain.setValueAtTime(.78,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.16);o.connect(g).connect(c.destination);o.start();o.stop(c.currentTime+.16);setTimeout(()=>c.close(),240)}catch(e){}}
 function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
@@ -1109,6 +1111,133 @@ $('#referenceColumn').addEventListener('change',function(){
 });
 
 
+/* ===== v0.3.5: packing completo con los códigos escaneados marcados ===== */
+const STYLE_LIB_URL='https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
+// xlsx-js-style permite colores al exportar. Se carga solo al exportar y se
+// guarda aparte para no reemplazar la librería que lee los Excel.
+async function loadStyleLib(){
+  if(window.__XLSX_STYLE)return window.__XLSX_STYLE;
+  const reader=window.XLSX;
+  try{
+    await new Promise((resolve,reject)=>{
+      const sc=document.createElement('script');
+      sc.src=STYLE_LIB_URL;sc.onload=resolve;sc.onerror=reject;
+      document.head.appendChild(sc);
+    });
+    const lib=window.XLSX;
+    window.XLSX=reader;
+    if(lib&&lib!==reader&&lib.utils){window.__XLSX_STYLE=lib;return lib}
+  }catch(e){window.XLSX=reader}
+  return null;
+}
+function exportCellValue(v){
+  const t=cellText(v);
+  // Números simples vuelven a ser números; códigos con ceros iniciales quedan como texto.
+  if(/^-?(0|[1-9]\d{0,9})(\.\d+)?$/.test(t))return Number(t);
+  return t;
+}
+// Marca por hoja: índice de fila -> {sample, code}
+function scannedMarksFor(service){
+  const marks=new Map();
+  for(const r of records){
+    if(r.found!==true||r.serviceId!==service.serviceId)continue;
+    const code=r.matchedCode||normalizeCode(r.code);
+    const details=findPackingDetails(service,code,r.sheet||undefined)||[];
+    for(const g of details){
+      const sheet=service.rowsBySheet.find(x=>x.sheetName===g.sheet);
+      const start=sheet?.startRow||0;
+      if(!marks.has(g.sheet))marks.set(g.sheet,new Map());
+      const m=marks.get(g.sheet);
+      for(const row of g.rows){
+        const i=row.n-1-start;
+        const prev=m.get(i);
+        m.set(i,{sample:Boolean(prev?.sample||r.sample),code:r.code});
+      }
+    }
+  }
+  return marks;
+}
+async function exportMarkedPacking(){
+  const i=selectedServiceIndex();
+  const service=services[i];
+  if(!service){setStatus('Selecciona un Excel.');return}
+  if(!service.rowsBySheet){setStatus('Para exportar el packing marcado, vuelve a cargar este Excel (la sesión no conservó sus filas).');return}
+  $('#exportMarked').disabled=true;
+  setStatus('Preparando el packing marcado…');
+  const styled=await loadStyleLib();
+  const X=styled||window.XLSX;
+  if(!X){setStatus('No se pudo cargar el generador de Excel. Revisa la conexión.');updateSummary();return}
+  const marks=scannedMarksFor(service);
+  const GREEN={fill:{patternType:'solid',fgColor:{rgb:'C6EFCE'}},font:{color:{rgb:'006100'}}};
+  const GREEN_BOLD={fill:{patternType:'solid',fgColor:{rgb:'C6EFCE'}},font:{color:{rgb:'006100'},bold:true}};
+  const SAMPLE_BOLD={fill:{patternType:'solid',fgColor:{rgb:'FFEB9C'}},font:{color:{rgb:'7F6000'},bold:true}};
+  const HEAD={font:{bold:true},fill:{patternType:'solid',fgColor:{rgb:'D9E1F2'}}};
+  const wb=X.utils.book_new();
+  let markedRows=0;
+  const usedNames=new Set();
+  for(const {sheetName,rows} of service.rowsBySheet){
+    const m=marks.get(sheetName)||new Map();
+    const hIdx=headerRowIndex(rows,rows.length);
+    const width=Math.max(1,...rows.map(r=>Array.isArray(r)?r.length:0));
+    const aoa=rows.map((row,ri)=>{
+      const mk=m.get(ri);
+      const status=mk?(mk.sample?'✓ Escaneado · Muestra':'✓ Escaneado'):(ri===hIdx?'Verificación':'');
+      return [status,...(Array.isArray(row)?row:[]).map(exportCellValue)];
+    });
+    if(!aoa.length)aoa.push(['Verificación']);
+    const ws=X.utils.aoa_to_sheet(aoa);
+    if(styled){
+      for(let ri=0;ri<aoa.length;ri++){
+        const mk=m.get(ri);
+        const isHead=ri===hIdx;
+        if(!mk&&!isHead)continue;
+        for(let ci=0;ci<=width;ci++){
+          const ref=X.utils.encode_cell({r:ri,c:ci});
+          if(!ws[ref])ws[ref]={t:'s',v:''};
+          ws[ref].s=isHead&&!mk?HEAD:(ci===0?(mk.sample?SAMPLE_BOLD:GREEN_BOLD):GREEN);
+        }
+      }
+    }
+    m.forEach(()=>markedRows++);
+    const colW=[{wch:22}];
+    for(let ci=0;ci<width;ci++){
+      const w=Math.max(6,...rows.slice(0,300).map(r=>cellText(r?.[ci]).length));
+      colW.push({wch:Math.min(40,w+2)});
+    }
+    ws['!cols']=colW;
+    let name=safeSheetName(sheetName),k=2;
+    while(usedNames.has(name))name=safeSheetName(`${sheetName.slice(0,27)} (${k++})`);
+    usedNames.add(name);
+    X.utils.book_append_sheet(wb,ws,name);
+  }
+  // Hoja resumen
+  const found=new Set(records.filter(r=>r.found===true&&r.serviceId===service.serviceId).map(r=>normalizeCode(r.code)));
+  const notFound=[...new Set(records.filter(r=>r.found===false).map(r=>normalizeCode(r.code)))];
+  const summary=[
+    ['Resumen de verificación'],
+    ['Archivo',service.fileName],
+    ['Servicio',service.key],
+    ['Fecha',new Date().toLocaleString('es-CL')],
+    ['Códigos escaneados coincidentes en este Excel',found.size],
+    ['Filas marcadas como escaneadas',markedRows],
+    ['Códigos físicos no encontrados en ningún Excel',notFound.length],
+    [],
+    ['Códigos físicos no encontrados'],
+    ...notFound.map(c=>[c])
+  ];
+  const ws2=X.utils.aoa_to_sheet(summary);
+  ws2['!cols']=[{wch:46},{wch:34}];
+  if(styled){
+    for(const ref of ['A1','A9'])if(ws2[ref])ws2[ref].s={font:{bold:true,sz:13}};
+  }
+  let rname='Verificación';while(usedNames.has(rname))rname+='_';
+  X.utils.book_append_sheet(wb,ws2,rname);
+  const stamp=new Date().toISOString().slice(0,10);
+  const base=String(service.key||service.fileName||'packing').replace(/[\\/:*?"<>|]+/g,' ').trim().slice(0,60)||'packing';
+  X.writeFile(wb,`${base}_verificado_${stamp}.xlsx`);
+  updateSummary();
+  setStatus(`Packing marcado generado · ${found.size} código(s) · ${markedRows} fila(s) marcadas${styled?'':' (sin colores: no se pudo cargar la librería de estilos)'}.`);
+}
 function safeSheetName(s){return String(s||'Prepacking').replace(/[\\/?*\[\]:]/g,' ').slice(0,31)||'Prepacking'}
 function exportPrepacking(){
   if(typeof XLSX==='undefined'){setStatus('No se pudo cargar el generador de Excel.');return}
@@ -1148,6 +1277,7 @@ document.querySelectorAll('#filterRow [data-filter]').forEach(btn=>btn.addEventL
   render();scheduleSave();
 }));
 $('#exportPrepacking').onclick=exportPrepacking;
+$('#exportMarked').onclick=exportMarkedPacking;
 
 $('#verifyManual').onclick=verifyManual;
 $('#manualCode').addEventListener('keydown',e=>{
