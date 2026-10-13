@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#102a43">
 <link rel="manifest" href="manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<title>Scanner Experimental v0.3.5-beta1</title>
+<title>Scanner Experimental v0.3.5-beta2</title>
 <style>
 :root{--bg:#071521;--panel:#102a43;--panel2:#0b2135;--line:#31566f;--ok:#2bd576;--sample:#ffcf5c;--bad:#ff6b6b;--text:#f7fbff;--muted:#b9cad8}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -80,7 +80,7 @@ label{font-size:12px;color:var(--muted)}.fileBtn{display:block;text-align:center
 </head>
 <body>
 <div class="app">
-<header><div><h1>Scanner Experimental v0.3.5-beta1</h1><small>Nativo · filas del packing · referencias · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
+<header><div><h1>Scanner Experimental v0.3.5-beta2</h1><small>Nativo · filas del packing · referencias · Prepacking</small></div><span class="badge" id="engineBadge">Sin iniciar</span></header>
 <main class="viewer" id="viewer"><video id="video" playsinline muted></video><div class="overlay"><div class="scanbox"><div class="scanline"></div></div></div></main>
 <section class="precisionPanel">
   <div class="zoomPanel">
@@ -215,6 +215,7 @@ function render(){
   h.innerHTML=shown.map(r=>{
     const state=r.sample?'📷 MUESTRA':r.found===true?'✓ Coincidencia':r.found===false?'✕ No encontrado':'';
     const extra=[];
+    if(r.sheet)extra.push(`Hoja: ${escapeHtml(r.sheet)}`);
     if(r.reference)extra.push(`Ref.: ${escapeHtml(r.reference)}`);
     if(r.equivalent&&r.matchedCode&&r.matchedCode!==r.code)extra.push(`Packing: ${escapeHtml(r.matchedCode)}`);
     const thumb=r.photo?`<img class="thumb" src="${r.photo}" alt="Muestra ${escapeHtml(r.code)}" data-photo-id="${r.id}">`:'';
@@ -378,10 +379,11 @@ function headerRowIndex(rows,beforeIdx){
 //  - las filas inmediatamente inferiores cuya celda en la columna del código
 //    está vacía (pertenecen al código de arriba), hasta encontrar otro valor,
 //    una fila en blanco o una fila de totales.
-function findPackingDetails(service,code){
+function findPackingDetails(service,code,onlySheet){
   if(!service?.rowsBySheet||!code)return null;
   const groups=[];
   for(const {sheetName,rows,startRow=0} of service.rowsBySheet){
+    if(onlySheet&&sheetName!==onlySheet)continue;
     const picked=new Map(); // índice de fila -> {cont, codeCol}
     for(let r=0;r<rows.length;r++){
       const row=rows[r];
@@ -442,7 +444,7 @@ function showPackingDetail(rec){
 }
 function detailsForCandidate(candidate){
   const s=services[candidate?.serviceIndex];
-  return findPackingDetails(s,candidate?.matchedCode);
+  return findPackingDetails(s,candidate?.matchedCode,candidate?.sheet);
 }
 const openDetails=new Set();
 
@@ -559,7 +561,7 @@ function rebuildGlobalIndex(){
     : 'Carga uno o varios Excel. Se indexarán automáticamente todas sus hojas.';
 }
 
-function getMatchCandidates(code){
+function baseMatchCandidates(code){
   const exact=globalIndex.get(code);
   if(exact&&exact.size)return [...exact].map(serviceIndex=>({serviceIndex,matchedCode:code,equivalent:false}));
   if(!/^\d+$/.test(code))return [];
@@ -569,7 +571,50 @@ function getMatchCandidates(code){
   if(!bucket)return [];
   return [...bucket.values()];
 }
-function hasAnyMatch(code){return getMatchCandidates(code).length>0}
+// v0.3.5: índice código -> hojas donde aparece (se calcula una vez por Excel).
+function sheetIndexFor(service){
+  if(!service?.rowsBySheet)return null;
+  if(service._sheetIdx)return service._sheetIdx;
+  const idx=new Map();
+  service.rowsBySheet.forEach(({rows},si)=>{
+    for(const row of rows){
+      if(!Array.isArray(row))continue;
+      for(const cell of row){
+        const code=normalizeCode(cell);
+        if(!code)continue;
+        if(!idx.has(code))idx.set(code,new Set());
+        idx.get(code).add(si);
+      }
+    }
+  });
+  service._sheetIdx=idx;
+  return idx;
+}
+// Si un código aparece en más de una hoja del mismo Excel (p. ej. packing
+// de la inspección + packing base), cada hoja se ofrece como una coincidencia
+// distinta y se usa el mismo aviso de "código duplicado" para elegir.
+function getMatchCandidates(code){
+  const out=[];
+  for(const c of baseMatchCandidates(code)){
+    const svc=services[c.serviceIndex];
+    const sheets=sheetIndexFor(svc)?.get(c.matchedCode);
+    if(sheets&&sheets.size>1){
+      for(const si of sheets)out.push({...c,sheet:svc.rowsBySheet[si].sheetName});
+    }else out.push(c);
+  }
+  return out;
+}
+function hasAnyMatch(code){return baseMatchCandidates(code).length>0}
+function candidateLabel(c){
+  const s=services[c.serviceIndex];
+  const parts=[s?.key||s?.fileName||'Excel'];
+  if(c.sheet){
+    const n=packingRowCount(findPackingDetails(s,c.matchedCode,c.sheet));
+    parts.push(`hoja ${c.sheet}${n?` (${n} fila${n===1?'':'s'})`:''}`);
+  }
+  parts.push(c.matchedCode+(c.equivalent?' (ceros equivalentes)':''));
+  return parts.join(' · ');
+}
 
 function renderReferenceSelect(){
   const sel=$('#referenceColumn');
@@ -635,6 +680,7 @@ function newRecordId(){
 
 function recordMetaText(rec,prefix='Encontrado'){
   const parts=[prefix,rec.key];
+  if(rec.sheet)parts.push(`Hoja ${rec.sheet}`);
   if(rec.reference)parts.push(`Ref. ${rec.reference}`);
   if(rec.equivalent&&rec.matchedCode&&rec.matchedCode!==rec.code)parts.push(`Packing ${rec.matchedCode}`);
   return parts.filter(Boolean).join(' · ');
@@ -647,6 +693,7 @@ function addResolvedRecord(code,candidate,found=true){
   const rec={
     id:newRecordId(),code,key,serviceId:service?.serviceId||null,sample:false,found,photo:null,
     matchedCode:candidate.matchedCode||code,equivalent:Boolean(candidate.equivalent),reference,
+    sheet:candidate.sheet||'',
     details:found?detailsForCandidate(candidate):null
   };
   records.unshift(rec);
@@ -671,7 +718,7 @@ function resolveAmbiguity(matchIndex){
   clearAmbiguity();
   addResolvedRecord(code,candidate,true);
   const svc=services[candidate.serviceIndex];
-  setStatus(`Código asociado a ${svc.key}${candidate.equivalent?` mediante equivalencia de ceros (${candidate.matchedCode})`:''}.`);
+  setStatus(`Código asociado a ${svc.key}${candidate.sheet?` · hoja ${candidate.sheet}`:''}${candidate.equivalent?` mediante equivalencia de ceros (${candidate.matchedCode})`:''}.`);
 }
 
 function existingPhysicalRecord(code){
@@ -707,6 +754,7 @@ function accept(code){
         existing.matchedCode=c.matchedCode;
         existing.equivalent=Boolean(c.equivalent);
         existing.reference=refsFor(c.serviceIndex,c.matchedCode);
+        existing.sheet=c.sheet||'';
         existing.details=detailsForCandidate(c);
         showPackingDetail(existing);
         render();scheduleSave();
@@ -763,14 +811,10 @@ function accept(code){
   $('#sample').disabled=true;
   showPackingDetail(null);
   $('#ambiguity').hidden=false;
-  $('#ambiguityText').textContent=`${normalized} puede corresponder a: ${candidates.map(c=>{
-    const s=services[c.serviceIndex];
-    return `${s.key} · ${c.matchedCode}${c.equivalent?' (ceros equivalentes)':''}`;
-  }).join(' · ')}`;
-  $('#ambiguityButtons').innerHTML=candidates.map((c,i)=>{
-    const s=services[c.serviceIndex];
-    return `<button type="button" data-match-index="${i}">${escapeHtml(s.key)} · ${escapeHtml(c.matchedCode)}</button>`;
-  }).join('');
+  $('#ambiguityText').textContent=`${normalized} aparece en ${candidates.length} lugares. Elige el que corresponde al packing de la inspección:`;
+  $('#ambiguityButtons').innerHTML=candidates.map((c,i)=>
+    `<button type="button" data-match-index="${i}">${escapeHtml(candidateLabel(c))}</button>`
+  ).join('');
   setStatus('Selecciona la coincidencia correcta para registrar la lectura.');
   beep();
 }
@@ -847,6 +891,7 @@ function serializableState(includePhotos=true,includeRows=true){
       matchedCode:r.matchedCode||null,
       equivalent:Boolean(r.equivalent),
       reference:r.reference||'',
+      sheet:r.sheet||'',
       details:r.details||null,
       photo:includePhotos?(r.photo||null):null
     }))
@@ -920,6 +965,7 @@ function restoreSession(){
         matchedCode:r.matchedCode||null,
         equivalent:Boolean(r.equivalent),
         reference:r.reference||'',
+        sheet:r.sheet||'',
         details:Array.isArray(r.details)?r.details:null,
         photo:r.photo||null
       });
